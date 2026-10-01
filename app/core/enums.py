@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class AnalysisStatus(StrEnum):
+    PENDING = "PENDING"
+    COLLECTING = "COLLECTING"
+    EXTRACTING_CLAIMS = "EXTRACTING_CLAIMS"
+    SEARCHING = "SEARCHING"
+    CHECKING = "CHECKING"
+    COMPLETED = "COMPLETED"
+    COMPLETED_WITH_LIMITATIONS = "COMPLETED_WITH_LIMITATIONS"
+    FAILED = "FAILED"
+
+
+class OperationStatus(StrEnum):
+    SUCCESS = "SUCCESS"
+    TECHNICAL_ERROR = "TECHNICAL_ERROR"
+    BLOCKED = "BLOCKED"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
+class Verdict(StrEnum):
+    SUPPORTED = "SUPPORTED"
+    REFUTED = "REFUTED"
+    NEI = "NEI"
+    CONFLICTING = "CONFLICTING"
+
+
+class ConfidenceLevel(StrEnum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INSUFFICIENT = "INSUFFICIENT"
+

@@ -1,0 +1,2 @@
+"""VerificaAI application package."""
+
