@@ -26,4 +26,3 @@ class AnalysisStatusResponse(BaseModel):
     error_code: str | None
     error_message: str | None
     limitations: list[str]
-

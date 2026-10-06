@@ -53,10 +53,6 @@ class Settings(BaseSettings):
     def validate_provider_mode(self) -> Settings:
         if self.provider_mode == "fake" and self.app_env not in {"test", "demo"}:
             raise ValueError("provider_mode=fake é permitido somente em test ou demo")
-        if self.provider_mode == "real" and not (
-            self.openai_api_key and self.openai_model
-        ):
-            raise ValueError(
-                "OPENAI_API_KEY e OPENAI_MODEL são obrigatórios no modo real"
-            )
+        if self.provider_mode == "real" and not (self.openai_api_key and self.openai_model):
+            raise ValueError("OPENAI_API_KEY e OPENAI_MODEL são obrigatórios no modo real")
         return self

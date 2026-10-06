@@ -58,4 +58,3 @@ def test_technical_error_is_not_presented_as_nei() -> None:
     assert technical[0] == "Falha técnica"
     assert technical != nei
     assert BERTIMBAU_MESSAGE == "Análise linguística: aguardando integração do BERTimbau."
-

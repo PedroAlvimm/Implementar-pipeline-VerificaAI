@@ -115,8 +115,7 @@ def run() -> None:
                 for claim in rendered["claims"]:
                     st.subheader(claim["text"])
                     st.markdown(
-                        f":{claim['verdict_color']}[{claim['verdict_label']}] — "
-                        f"{claim['reason']}"
+                        f":{claim['verdict_color']}[{claim['verdict_label']}] — {claim['reason']}"
                     )
                     for evidence in claim["evidence"]:
                         st.link_button(evidence["title"], evidence["url"])

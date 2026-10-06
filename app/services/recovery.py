@@ -9,4 +9,3 @@ class RecoveryService:
 
     def fail_interrupted_analyses(self) -> int:
         return self._repository.fail_interrupted()
-

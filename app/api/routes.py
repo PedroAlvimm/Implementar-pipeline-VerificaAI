@@ -91,4 +91,3 @@ def build_router(container: AppContainer) -> APIRouter:
             return report.payload
 
     return router
-

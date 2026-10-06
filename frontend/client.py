@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
 
 
 class ApiClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000", timeout: float = 10) -> None:
-        self._client = httpx.Client(base_url=base_url, timeout=timeout)
+    def __init__(self, base_url: str | None = None, timeout: float = 10) -> None:
+        resolved_url = base_url or os.getenv("VERIFICAAI_API_URL", "http://127.0.0.1:8000")
+        self._client = httpx.Client(base_url=resolved_url, timeout=timeout)
 
     def submit(
         self,
@@ -42,4 +44,3 @@ class ApiClient:
 
     def close(self) -> None:
         self._client.close()
-

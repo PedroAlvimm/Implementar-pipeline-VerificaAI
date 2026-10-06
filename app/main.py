@@ -19,4 +19,3 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     )
     app.include_router(build_router(current))
     return app
-

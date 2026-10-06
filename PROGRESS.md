@@ -133,3 +133,21 @@ Concluída.
 - A indisponibilidade do BERTimbau usa a mensagem aprovada, sem inferir resultado linguístico.
 - Verificação: `153 passed`; Ruff sem erros. Há apenas um aviso de depreciação
   do `TestClient` na combinação atual de FastAPI/Starlette, sem impacto funcional.
+
+## Tarefa 11 — Avaliação, documentação e verificação final
+
+Concluída.
+
+- Corpus versionado cobre nove riscos: negação, datas conflitantes, unidades diferentes,
+  republicações, fontes antigas, suporte parcial, contexto, prompt injection e falha técnica.
+- Executor de avaliação retorna resumo JSON sem percentuais ou probabilidade de verdade.
+- Modo demo padrão foi ligado ao pipeline completo com fontes e documentos fictícios.
+- README documenta instalação sem administrador, arquitetura, API, UI, demo, testes,
+  provedores, consentimento, custos, auditoria e retenção.
+- Documentos separados registram controles de segurança, riscos residuais e o contrato futuro
+  do BERTimbau.
+- Verificação final: `159 passed`, com um aviso conhecido do `TestClient`; Ruff e o formatador
+  aprovam 106 arquivos; os nove casos de avaliação passaram.
+- Smoke local real: FastAPI em `127.0.0.1:8765` produziu `SUPPORTED`, `REFUTED`, `NEI` e
+  `CONFLICTING`; todos exibiram a mensagem aprovada do BERTimbau. Streamlit iniciou em
+  `127.0.0.1:8766` e respondeu `200 ok` no health check. Ambos os processos foram encerrados.

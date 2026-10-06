@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
-from app.api.dependencies import AppContainer
+from app.api.dependencies import AppContainer, build_default_container
 from app.core.config import Settings
 from app.core.enums import AnalysisStatus
 from app.database.base import Base
@@ -86,9 +87,7 @@ def test_idempotency_conflict_and_queue_capacity_have_explicit_codes(api) -> Non
         headers=headers,
     )
     executor.reject = True
-    capacity = client.post(
-        "/api/v1/analyses", json={"input_type": "text", "content": "Terceiro"}
-    )
+    capacity = client.post("/api/v1/analyses", json={"input_type": "text", "content": "Terceiro"})
 
     assert conflict.status_code == 409
     assert capacity.status_code == 429
@@ -167,3 +166,36 @@ def test_real_provider_requires_explicit_external_processing_consent(tmp_path: P
 
     assert response.status_code == 403
     assert "consentimento" in response.json()["detail"].casefold()
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        ("Em 2024, o Município Alfa comprou 10 ambulâncias.", "SUPPORTED"),
+        ("Em 2024, o Município Alfa comprou 20 ambulâncias.", "REFUTED"),
+        ("O Município Alfa criará uma universidade em 2027.", "NEI"),
+        ("Fontes divergem sobre 10 ambulâncias do Município Alfa.", "CONFLICTING"),
+    ],
+)
+def test_default_demo_stack_runs_four_fictional_verdicts(
+    tmp_path: Path, content: str, expected: str
+) -> None:
+    settings = Settings(
+        app_env="demo",
+        provider_mode="fake",
+        database_url=f"sqlite:///{tmp_path / f'{expected}.sqlite3'}",
+    )
+    container = build_default_container(settings)
+    client = TestClient(create_app(container))
+    try:
+        response = client.post("/api/v1/analyses", json={"input_type": "text", "content": content})
+        analysis_id = response.json()["analysis_id"]
+        container.executor.wait(analysis_id, timeout=2)
+        with container.sessions() as session:
+            report = session.scalar(
+                select(ReportRecord).where(ReportRecord.analysis_id == analysis_id)
+            )
+        assert report.payload["claims"][0]["verdict"] == expected
+        assert report.payload["risk_message"].endswith("BERTimbau.")
+    finally:
+        container.executor.shutdown()

@@ -1,0 +1,11 @@
+[
+  {"id": "negation", "risk": "negation", "expected_outcome": "PRESERVED"},
+  {"id": "conflicting_dates", "risk": "conflicting_dates", "expected_verdict": "CONFLICTING"},
+  {"id": "different_units", "risk": "different_units", "expected_outcome": "QUOTE_REJECTED"},
+  {"id": "republications", "risk": "copied_sources", "expected_outcome": "ONE_GROUP"},
+  {"id": "stale_sources", "risk": "stale_sources", "expected_verdict": "NEI", "expected_limitation": "temporal_mismatch:ev_stale"},
+  {"id": "partial_support", "risk": "partial_support", "expected_outcome": "INSUFFICIENT_EVIDENCE"},
+  {"id": "literal_quote_out_of_context", "risk": "quote_context", "expected_verdict": "NEI"},
+  {"id": "prompt_injection", "risk": "prompt_injection", "expected_outcome": "ISOLATED"},
+  {"id": "mid_analysis_failure", "risk": "technical_failure", "expected_status": "COMPLETED_WITH_LIMITATIONS", "expected_limitation": "claim_01:search_unavailable"}
+]
