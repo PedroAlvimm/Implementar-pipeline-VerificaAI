@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.database.base import Base
 from app.database.repositories import AnalysisRepository
 from app.database.session import build_engine, build_session_factory
+from app.ingestion.url_loader import build_safe_url_loader
 from app.reports.builder import ReportBuilder
 from app.risk_analysis.disabled import DisabledRiskAnalyzer
 from app.services.demo import DemoServices
@@ -45,6 +46,7 @@ def build_default_container(settings: Settings | None = None) -> AppContainer:
             judge=demo,
             report_builder=ReportBuilder(),
             risk_analyzer=DisabledRiskAnalyzer(),
+            url_loader=build_safe_url_loader(current),
             limits=PipelineLimits(
                 timeout_seconds=current.analysis_timeout_seconds,
                 max_llm_calls=current.max_llm_calls,

@@ -28,6 +28,7 @@ from app.evidence.service import EvidenceService
 from app.evidence.source_metadata import SourceType
 from app.fact_checking.aggregation import DecisionSource, aggregate_claim
 from app.fact_checking.judgment import JudgmentEvidence, validate_decision
+from app.ingestion.url_loader import UrlInputFailure
 
 
 class LoadedInput(BaseModel):
@@ -220,6 +221,8 @@ class AnalysisPipeline:
                 "COLLECTION_TECHNICAL_ERROR",
                 "A coleta da entrada falhou por indisponibilidade técnica.",
             )
+        except UrlInputFailure as exc:
+            return self.repository.fail(analysis_id, exc.code, str(exc))
         except Exception as exc:
             return self.repository.fail(analysis_id, "PIPELINE_ERROR", str(exc))
 

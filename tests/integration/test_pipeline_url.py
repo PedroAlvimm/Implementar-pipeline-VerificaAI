@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.core.enums import AnalysisStatus
 from app.core.schemas import AnalysisCreate
+from app.ingestion.url_loader import UrlInputFailure
 from app.services.pipeline import LoadedInput
 from tests.integration.test_pipeline_text import pipeline_factory as _pipeline_factory
 
@@ -42,3 +43,20 @@ def test_url_collection_error_does_not_become_absence_of_evidence(PIPELINE_FIXTU
 
     assert result.status == AnalysisStatus.FAILED
     assert result.error_code == "COLLECTION_TECHNICAL_ERROR"
+
+
+def test_url_pipeline_preserves_specific_collection_failure(PIPELINE_FIXTURE) -> None:
+    scenario = json.loads(Path("tests/fixtures/demo/supported.json").read_text())
+    pipeline, repository, _ = PIPELINE_FIXTURE(scenario)
+    pipeline.url_loader = lambda url: (_ for _ in ()).throw(
+        UrlInputFailure("ROBOTS_UNKNOWN", "Cole o texto para continuar.")
+    )
+    created = repository.create(
+        AnalysisCreate(input_type="url", content="https://entrada.example/noticia")
+    )
+
+    result = pipeline.run(created.id)
+
+    assert result.status == AnalysisStatus.FAILED
+    assert result.error_code == "ROBOTS_UNKNOWN"
+    assert result.error_message == "Cole o texto para continuar."

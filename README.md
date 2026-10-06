@@ -18,7 +18,8 @@ fontes, trechos e limitações.
 - citações mapeadas literalmente para a evidência armazenada;
 - jobs limitados a duas execuções e dez itens em fila por padrão;
 - API FastAPI e interface Streamlit local, com polling não bloqueante;
-- modo demo integralmente local, determinístico e sem rede.
+- modo demo determinístico, sem OpenAI ou Brave; URLs escolhidas explicitamente usam apenas
+  o coletor HTTP seguro.
 
 ## Arquitetura
 
@@ -51,7 +52,7 @@ cp .env.example .env
 
 O projeto não exige instalação global nem `sudo`.
 
-## Demonstração sem rede
+## Demonstração local
 
 Em um terminal:
 
@@ -78,6 +79,10 @@ Fontes divergem sobre a compra de 10 ambulâncias pelo Município Alfa em 2024.
 
 Elas exercitam, respectivamente, sustentada, refutada, evidência insuficiente e conflito.
 Todos os nomes, documentos e domínios do modo demo são fictícios.
+
+Entradas de texto não usam rede. Ao selecionar `url`, o sistema acessa a página pública
+informada, respeita `robots.txt`, extrai o texto e depois usa o pipeline fictício local. Uma
+falha de coleta mostra seu código específico e oferece a alternativa de colar o texto.
 
 ## API
 
@@ -120,4 +125,3 @@ interrompidos com `PROCESS_INTERRUPTED` em vez de inventar um resultado.
 
 Consulte [segurança](docs/security.md), [limitações](docs/limitations.md) e
 [integração futura do BERTimbau](docs/bertimbau-integration.md).
-

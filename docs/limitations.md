@@ -4,6 +4,8 @@ Esta PoC reduz os riscos de arquitetura, mas não substitui revisão humana nem 
 produção. Permanecem:
 
 - O modo demo é determinístico e fictício; ele valida o fluxo, não a qualidade de provedores.
+  Entradas por URL ainda acessam a página pública escolhida, embora OpenAI e Brave permaneçam
+  desativados.
 - Adaptadores OpenAI e Brave foram implementados e testados com HTTP simulado, mas a montagem
   real permanece desativada por padrão até revisão de consentimento, custos, termos e segredos.
 - A qualidade final depende da cobertura da busca, disponibilidade das páginas, extração de
@@ -27,4 +29,3 @@ produção. Permanecem:
 
 Antes de produção, execute avaliação com corpus real revisado, teste de carga, pentest, revisão
 de privacidade/LGPD, gestão de segredos e monitoramento operacional.
-

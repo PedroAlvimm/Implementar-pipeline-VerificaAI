@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.api import dependencies
 from app.api.dependencies import AppContainer, build_default_container
 from app.core.config import Settings
 from app.core.enums import AnalysisStatus
@@ -13,6 +14,7 @@ from app.database.base import Base
 from app.database.models import ClaimRecord, ReportRecord
 from app.database.repositories import AnalysisRepository
 from app.database.session import build_engine, build_session_factory
+from app.ingestion.url_loader import LoadedUrl
 from app.main import create_app
 from app.services.jobs import JobCapacityError, JobStatus
 
@@ -197,5 +199,43 @@ def test_default_demo_stack_runs_four_fictional_verdicts(
             )
         assert report.payload["claims"][0]["verdict"] == expected
         assert report.payload["risk_message"].endswith("BERTimbau.")
+    finally:
+        container.executor.shutdown()
+
+
+def test_default_demo_stack_connects_safe_url_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        dependencies,
+        "build_safe_url_loader",
+        lambda settings: (
+            lambda url: LoadedUrl(
+                text="Em 2024, o Município Alfa comprou 10 ambulâncias.",
+                title="Entrada coletada",
+                canonical_url=url,
+            )
+        ),
+    )
+    settings = Settings(
+        app_env="demo",
+        provider_mode="fake",
+        database_url=f"sqlite:///{tmp_path / 'url-demo.sqlite3'}",
+    )
+    container = dependencies.build_default_container(settings)
+    client = TestClient(create_app(container))
+    try:
+        response = client.post(
+            "/api/v1/analyses",
+            json={"input_type": "url", "content": "https://public.example/noticia"},
+        )
+        analysis_id = response.json()["analysis_id"]
+        container.executor.wait(analysis_id, timeout=2)
+
+        status = client.get(f"/api/v1/analyses/{analysis_id}").json()
+        report = client.get(f"/api/v1/analyses/{analysis_id}/report").json()
+
+        assert status["status"] == "COMPLETED"
+        assert report["title"] == "Entrada coletada"
     finally:
         container.executor.shutdown()

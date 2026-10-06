@@ -151,3 +151,15 @@ Concluída.
 - Smoke local real: FastAPI em `127.0.0.1:8765` produziu `SUPPORTED`, `REFUTED`, `NEI` e
   `CONFLICTING`; todos exibiram a mensagem aprovada do BERTimbau. Streamlit iniciou em
   `127.0.0.1:8766` e respondeu `200 ok` no health check. Ambos os processos foram encerrados.
+
+## Tarefa 12 — Entrada por URL segura
+
+Concluída.
+
+- A montagem demo agora conecta `SafeCollector` e `ArticleExtractor` ao pipeline de entrada.
+- URLs públicas passam pela política de SSRF, DNS pinado, redirecionamentos e `robots.txt`.
+- Timeout, bloqueio de robôs, paywall, conteúdo incompatível e falha de extração mantêm
+  códigos e mensagens próprios até a API e a interface.
+- HTML bruto não é gravado no SQLite; o pipeline recebe somente texto e metadados extraídos.
+- Testes de integração usam transporte simulado e não acessam a rede.
+- Verificação: `167 passed`; Ruff e formatação aprovados em 109 arquivos.
