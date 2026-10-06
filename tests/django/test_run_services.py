@@ -42,6 +42,44 @@ def test_idempotency_key_reuse_with_different_input_conflicts():
         runs.create_analysis("text", "Outra afirmação.", "request-1", uuid4())
 
 
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_same_key_returns_one_analysis_and_first_run():
+    runs = services()
+    barrier = Barrier(2)
+
+    def attempt():
+        barrier.wait(timeout=5)
+        return runs.create_analysis("text", "Uma afirmação.", "shared-key", uuid4())
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _number: attempt(), range(2)))
+
+    assert sorted(result[2] for result in results) == [False, True]
+    assert len({result[0].pk for result in results}) == 1
+    assert len({result[1].pk for result in results}) == 1
+    assert results[0][1].ordinal == results[1][1].ordinal == 1
+    assert Analysis.objects.count() == AnalysisRun.objects.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_same_key_with_different_content_conflicts():
+    runs = services()
+    barrier = Barrier(2)
+
+    def attempt(content):
+        barrier.wait(timeout=5)
+        try:
+            return runs.create_analysis("text", content, "shared-key", uuid4())
+        except runs.RunConflictError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, ("Uma afirmação.", "Outra afirmação.")))
+
+    assert sum(result is None for result in results) == 1
+    assert Analysis.objects.count() == AnalysisRun.objects.count() == 1
+
+
 @pytest.mark.parametrize("input_type,content", [("pdf", "Texto"), ("text", "   ")])
 def test_invalid_input_does_not_create_rows(input_type, content):
     with pytest.raises(ValueError):

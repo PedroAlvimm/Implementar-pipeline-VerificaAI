@@ -1,6 +1,8 @@
 """Transactional creation and state transitions for analysis runs."""
 
+from contextlib import nullcontext
 from hashlib import sha256
+from threading import Lock
 from uuid import UUID
 
 from django.db import IntegrityError, OperationalError, transaction
@@ -24,6 +26,18 @@ _TRANSITIONS = {
         )
     ),
 }
+_CREATE_LOCK = Lock()
+
+
+def _matching_idempotent_pair(
+    input_type: str, input_hash: str, idempotency_key: str
+) -> tuple[Analysis, AnalysisRun, bool] | None:
+    existing = Analysis.objects.filter(idempotency_key=idempotency_key).first()
+    if existing is None:
+        return None
+    if existing.input_type != input_type or existing.input_hash != input_hash:
+        raise RunConflictError("Idempotency key belongs to a different input")
+    return existing, existing.runs.order_by("ordinal").first(), False
 
 
 def create_analysis(
@@ -35,18 +49,15 @@ def create_analysis(
     normalized = content.strip()
     input_hash = sha256(normalized.encode("utf-8")).hexdigest()
 
-    with transaction.atomic():
-        if idempotency_key is not None:
-            existing = (
-                Analysis.objects.select_for_update().filter(idempotency_key=idempotency_key).first()
-            )
-            if existing is not None:
-                if existing.input_type != input_type or existing.input_hash != input_hash:
-                    raise RunConflictError("Idempotency key belongs to a different input")
-                return existing, existing.runs.order_by("ordinal").first(), False
-
+    # The local SQLite deployment runs one process. Serialize keyed creations so
+    # a read transaction cannot race another writer in the same process.
+    with _CREATE_LOCK if idempotency_key is not None else nullcontext():
         try:
             with transaction.atomic():
+                if idempotency_key is not None:
+                    existing = _matching_idempotent_pair(input_type, input_hash, idempotency_key)
+                    if existing is not None:
+                        return existing
                 analysis = Analysis.objects.create(
                     input_type=input_type,
                     original_input=content,
@@ -56,7 +67,15 @@ def create_analysis(
                 run = AnalysisRun.objects.create(
                     analysis=analysis, ordinal=1, request_id=request_id
                 )
-        except IntegrityError as exc:
+        except (IntegrityError, OperationalError) as exc:
+            if isinstance(exc, OperationalError) and "locked" not in str(exc).lower():
+                raise
+            # A different transaction may have won the unique-key race. The
+            # failed transaction has ended, so this read sees committed data.
+            if idempotency_key is not None:
+                existing = _matching_idempotent_pair(input_type, input_hash, idempotency_key)
+                if existing is not None:
+                    return existing
             raise RunConflictError("Analysis creation conflicts with existing data") from exc
         return analysis, run, True
 
