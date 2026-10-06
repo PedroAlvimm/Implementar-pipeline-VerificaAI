@@ -1,5 +1,7 @@
 # VerificaAI Django Foundation Implementation Plan
 
+> **Substituído:** para a entrega 1.0, use `2026-10-06-verificaai-1-0.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an executable Django foundation, constrained audit models, formal state machines, and a safe legacy SQLite importer while leaving the existing application runnable.

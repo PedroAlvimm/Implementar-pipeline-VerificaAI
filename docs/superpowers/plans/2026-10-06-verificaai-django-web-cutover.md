@@ -1,5 +1,7 @@
 # VerificaAI Django Web Cutover Implementation Plan
 
+> **Substituído:** para a entrega 1.0, use `2026-10-06-verificaai-1-0.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the Django REST API and server-rendered interface, rehearse legacy migration, remove the old web/persistence stack, and verify the complete local application.
