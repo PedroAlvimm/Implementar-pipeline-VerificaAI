@@ -113,7 +113,76 @@ consultados ou relacionais terão colunas próprias.
 SQLite permanece como padrão local. A modelagem e as transações não dependerão de extensões
 específicas, permitindo migração futura para PostgreSQL sem fazer parte desta entrega.
 
-### 4.1 Reexecuções e imutabilidade
+### 4.1 Constraints de banco
+
+As invariantes abaixo serão declaradas nas migrations por `UniqueConstraint`, `CheckConstraint`,
+`ForeignKey`/`OneToOneField` e nulabilidade. Validação apenas em serializer ou `clean()` não é
+suficiente.
+
+Regras comuns:
+
+- chaves públicas serão UUIDs imutáveis e timestamps obrigatórios usarão UTC;
+- todo campo de estado terá `choices` e `CheckConstraint` com os valores permitidos;
+- relações auditáveis usarão `PROTECT`; arquivamento e retenção não apagarão resultados;
+- `finished_at` não poderá preceder `started_at`; lease expirado não poderá preceder heartbeat;
+- contadores, ordinais, tamanhos e números de tentativa serão não negativos, e ordinais começam
+  em 1;
+- hashes terão tamanho e formato validados pela aplicação e comprimento fixo no schema;
+- campos obrigatórios do manifesto não aceitarão string vazia nem `NULL`.
+
+Constraints por agregado:
+
+- `Analysis`: `input_type` limitado a `text|url`, entrada não vazia e `idempotency_key` única
+  quando presente; reutilização da mesma chave com outro hash será conflito, não deduplicação;
+- `AnalysisRun`: unicidade `(analysis_id, ordinal)`, `ordinal >= 1` e no máximo um run em estado
+  não terminal por análise por meio de constraint única condicional;
+- `Job`: unicidade `(run_id, attempt_number)`, `attempt_number >= 1`, no máximo um job ativo por
+  run e `retry_of_id != id`; lease/heartbeat serão nulos fora de `RUNNING`;
+- `BERTAnalysis`: unicidade `(run_id, ordinal)`; `AVAILABLE` exige rótulo
+  `FALSA|VERDADEIRA`, score finito entre 0 e 1, modelo e versão; outros estados não podem
+  carregar rótulo ou score;
+- `Claim`: unicidade `(run_id, claim_key)`;
+- `Query`: unicidade `(run_id, claim_id, normalized_query_hash)`;
+- `SearchResult`: unicidade `(run_id, canonical_url_hash)` após deduplicação;
+- `Evidence`: unicidade `(run_id, evidence_key)` e referência obrigatória ao run e à fonte;
+- `Decision`: unicidade `(run_id, claim_id, evidence_id)` e referências pertencentes ao mesmo
+  run, esta última validada transacionalmente pelo serviço;
+- `Report`: relação um-para-um com `AnalysisRun` e versão de schema obrigatória;
+- `Artifact`: unicidade `(run_id, relative_path)`, tamanho não negativo e hash obrigatório;
+  caminho relativo seguro é validado antes da gravação e da leitura.
+
+SQLite não consegue expressar todas as invariantes relacionais entre várias tabelas. As que não
+couberem em constraint nativa serão protegidas por serviço transacional e teste concorrente, e
+serão listadas como candidatas a constraint/trigger na futura migração PostgreSQL.
+
+### 4.2 Índices
+
+Além dos índices criados por PKs, FKs e constraints únicas, as migrations declararão somente os
+índices exigidos pelos caminhos de consulta:
+
+| Nome lógico | Campos | Uso |
+|---|---|---|
+| `analysis_state_created_idx` | `Analysis(state, created_at)` | histórico e operação |
+| `analysis_input_hash_idx` | `Analysis(input_hash)` | auditoria/deduplicação sem indexar texto |
+| `run_analysis_created_idx` | `AnalysisRun(analysis_id, created_at)` | histórico de runs |
+| `run_state_updated_idx` | `AnalysisRun(state, updated_at)` | recuperação e acompanhamento |
+| `job_queue_idx` | `Job(state, available_at, created_at)` | retirada ordenada da fila |
+| `job_lease_idx` | `Job(state, lease_expires_at)` | detecção de jobs órfãos |
+| `job_request_idx` | `Job(request_id)` | correlação operacional |
+| `claim_run_priority_idx` | `Claim(run_id, priority)` | relatório e execução |
+| `query_claim_idx` | `Query(run_id, claim_id)` | trilha de busca |
+| `result_run_domain_idx` | `SearchResult(run_id, domain_hash)` | auditoria de fontes |
+| `evidence_claim_rank_idx` | `Evidence(run_id, claim_id, rank)` | seleção e relatório |
+| `evidence_independence_idx` | `Evidence(run_id, independence_group)` | deduplicação |
+| `decision_claim_idx` | `Decision(run_id, claim_id)` | agregação factual |
+| `bert_run_state_idx` | `BERTAnalysis(run_id, state)` | painel auxiliar |
+| `artifact_expiry_idx` | `Artifact(retain_until)` | retenção |
+
+Não serão indexados texto original, HTML, citações, prompts preenchidos ou URLs completas. Os
+índices usarão IDs e hashes de cardinalidade controlada. `EXPLAIN` em fixtures representativas
+confirmará os caminhos críticos; índices sem consulta comprovada não serão adicionados.
+
+### 4.3 Reexecuções e imutabilidade
 
 `Analysis` representa a solicitação e sua entrada canônica. Cada execução cria um novo
 `AnalysisRun` com ordinal crescente e nunca reutiliza as linhas de claims, consultas,
@@ -124,7 +193,7 @@ O estado exibido em `Analysis` é o estado agregado do run mais recente, enquant
 API permitem selecionar qualquer run. Idempotência do `POST` inicial evita análises duplicadas;
 idempotência de reexecução vale somente para a mesma chave e mesma operação de criação de run.
 
-### 4.2 Versionamento integral do pipeline
+### 4.4 Versionamento integral do pipeline
 
 Cada `AnalysisRun` armazenará um manifesto imutável com:
 
@@ -141,7 +210,7 @@ Cada `AnalysisRun` armazenará um manifesto imutável com:
 Segredos e conteúdo sensível nunca entram no manifesto. Se uma versão obrigatória não puder ser
 determinada, o run não será apresentado como reproduzível e registrará uma limitação explícita.
 
-### 4.3 Máquinas de estado
+### 4.5 Máquinas de estado
 
 Transições serão implementadas por métodos de serviço transacionais; alterações diretas de
 estado pelo Admin ou por `save()` genérico serão bloqueadas.
@@ -149,10 +218,9 @@ estado pelo Admin ou por `save()` genérico serão bloqueadas.
 **`Analysis`**
 
 ```text
-CREATED -> RUNNING -> COMPLETED
-        -> FAILED
-                   -> COMPLETED_WITH_LIMITATIONS
-                   -> FAILED
+CREATED -> RUNNING
+CREATED -> FAILED
+RUNNING -> COMPLETED | COMPLETED_WITH_LIMITATIONS | FAILED
 COMPLETED | COMPLETED_WITH_LIMITATIONS | FAILED -> RUNNING  (novo AnalysisRun)
 qualquer estado terminal -> ARCHIVED
 ```
@@ -329,6 +397,48 @@ configurados e a concorrência continuará baixa e explícita.
 Essas medidas reduzem contenção, mas não transformam SQLite em banco de produção concorrente.
 PostgreSQL é requisito da futura etapa de produção pública.
 
+### 8.4 Lifecycle do `ThreadPoolExecutor`
+
+O executor será propriedade de um `LocalJobRuntime` com máquina de lifecycle interna
+`NEW -> RUNNING -> DRAINING -> STOPPED`. Não haverá pool global criado em import, singleton
+implícito em módulo nem inicialização em `AppConfig.ready()`, porque essas opções abrem threads
+durante migrations, testes e comandos administrativos.
+
+Lifecycle obrigatório:
+
+1. **Inicialização:** o serviço de aplicação chama `start()` explicitamente ou no primeiro
+   `submit()`. A operação é thread-safe e idempotente. Antes de aceitar jobs, ela fecha conexões
+   herdadas, reconcilia leases expirados e só então cria o pool.
+2. **Operação:** existe um runtime por processo e cada job passa por um wrapper que chama
+   `close_old_connections()` antes e depois do trabalho, estabelece correlation IDs, renova o
+   lease e converte exceções em estados persistidos.
+3. **Submissão:** somente `RUNNING` aceita trabalho. `DRAINING` e `STOPPED` rejeitam com erro de
+   capacidade/indisponibilidade sem criar um job órfão. A reserva da capacidade e a criação do
+   `Job` são coordenadas para impedir oversubscription.
+4. **Shutdown gracioso:** parar de aceitar jobs, cancelar futures ainda não iniciados sem tirar
+   seus registros de `QUEUED`, esperar futures ativos até `JOB_SHUTDOWN_GRACE_SECONDS`, fechar
+   conexões e chamar `shutdown(wait=False, cancel_futures=True)` depois da espera limitada.
+   `shutdown()` é idempotente.
+5. **Encerramento forçado:** threads Python não serão mortas de forma insegura. Se o processo
+   terminar após o período de graça, leases dos jobs ativos expiram; o próximo runtime os marca
+   `INTERRUPTED` e aplica a política de recovery.
+
+O entrypoint local instalará handlers de `SIGTERM`/`SIGINT` e fallback `atexit` de melhor
+esforço. O servidor de desenvolvimento será documentado com autoreload desativado, evitando
+dois processos e dois pools. Fork depois da criação do pool é proibido. A configuração local
+rejeitará múltiplos processos web, pois cada processo criaria seu próprio executor contra o
+mesmo SQLite.
+
+`ThreadPoolExecutor` não consegue interromper com segurança uma função Python já iniciada, e
+`wait=False` não garante que o interpretador saia enquanto threads não daemon permanecem
+ativas. Se o período de graça expirar, o runtime registra o evento e depende de segundo sinal ou
+`SIGKILL` do operador/supervisor; a recuperação acontece pelos leases no próximo processo. Essa
+limitação é mais um motivo para a futura produção usar workers isolados em processos.
+
+Testes de lifecycle cobrirão `start()` e `shutdown()` repetidos, submissão durante drenagem,
+cancelamento de itens não iniciados, espera limitada, fechamento de conexões, ausência de
+threads após a fixture e recuperação por lease depois de `SIGKILL` em subprocesso.
+
 ## 9. BERTimbau auxiliar
 
 O modelo continuará vindo diretamente do bucket
@@ -435,6 +545,9 @@ A suíte usará `pytest`, `pytest-django` e os clientes de teste do Django e DRF
 - execução ponta a ponta em SQLite sem provedores externos;
 - crash recovery em subprocesso real antes e depois de `FACTUAL_COMPLETED`;
 - contenção SQLite sob a concorrência local configurada;
+- constraints rejeitando estados, ordinais, scores e relações inválidas diretamente no banco;
+- planos de consulta usando os índices definidos para fila, lease, histórico e relatório;
+- lifecycle completo do executor, incluindo drenagem, sinais e ausência de threads vazadas;
 - corpus de avaliação existente sem regressões.
 
 Testes de rede reais ficarão fora da suíte padrão. Um smoke test opt-in poderá baixar o bucket
@@ -443,11 +556,13 @@ público anonimamente, validar o snapshot, carregar o modelo e executar exemplos
 ## 13. Fases de implementação e corte
 
 1. Adicionar o projeto Django e configuração de testes sem remover o sistema atual.
-2. Criar modelos, state machines, migrations e o importador do banco legado.
+2. Criar modelos, constraints, índices, state machines, migrations e o importador do banco
+   legado.
 3. Adaptar persistência, versionamento, correlação e serviços do pipeline ao Django ORM.
 4. Implementar a API DRF compatível e seus testes de contrato.
 5. Implementar templates, polling e histórico.
-6. Adaptar jobs, retries, crash recovery, observabilidade e BERTimbau ao fluxo factual-primeiro.
+6. Adaptar jobs, lifecycle do executor, retries, crash recovery, observabilidade e BERTimbau ao
+   fluxo factual-primeiro.
 7. Executar dry-run e migração real dos dados, com reconciliação.
 8. Fazer smoke test ponta a ponta e comparar comportamento com a aplicação anterior.
 9. Remover FastAPI, Streamlit e SQLAlchemy, além dos entrypoints e testes obsoletos.
@@ -480,7 +595,7 @@ aqui são pontos de migração para essa etapa; SQLite e `ThreadPoolExecutor` n�
 - migração para PostgreSQL;
 - retreinamento ou recalibração do BERTimbau;
 - aceitação automática de novas versões do bucket;
-- substituição dos provedores externos ainda não operacionalizados.
+- substituição dos provedores externos ainda não operacionalizados;
 - semantic retrieval/reranking e qualquer reutilização do detector BERTimbau para esse fim.
 
 ## 16. Critérios de aceitação
@@ -502,4 +617,8 @@ A migração estará concluída quando:
 13. cada run persistir manifesto completo de versões e correlation IDs;
 14. retries, observabilidade e crash recovery real passarem nos testes definidos;
 15. documentação declarar inequivocamente que SQLite e fila local não são a fronteira de
-    produção pública.
+    produção pública;
+16. constraints e índices definidos nas migrations passarem nos testes de integridade e plano
+    de consulta;
+17. lifecycle do `ThreadPoolExecutor` ser explícito, idempotente e não deixar threads ou jobs
+    órfãos após shutdown e crash recovery.
