@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "beautifulsoup4>=4.12,<5",
+  "django>=5.2,<5.3",
+  "djangorestframework>=3.16,<4",
   "fastapi>=0.115,<1",
   "httpx>=0.27,<1",
   "pydantic>=2.10,<3",
@@ -29,12 +31,13 @@ bertimbau = [
 dev = [
   "pytest>=8,<10",
   "pytest-cov>=6,<8",
+  "pytest-django>=4.11,<5",
   "respx>=0.22,<1",
   "ruff>=0.8,<1",
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "analyses*", "verificaai*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
