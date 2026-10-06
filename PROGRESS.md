@@ -116,3 +116,20 @@ Concluída.
 - Jobs duplicados são reaproveitados; exceções ficam registradas sem derrubar os workers.
 - Reinícios marcam trabalhos interrompidos como falha técnica recuperável.
 - Verificação: `141 passed`; Ruff sem erros.
+
+## Tarefa 10 — API local e interface Streamlit
+
+Concluída.
+
+- API FastAPI oferece criação, estado, claims e relatório sob `/api/v1/analyses`.
+- Criação responde `202` com `Location`, aceita idempotência e distingue conflitos,
+  fila cheia, validação e recurso inexistente por códigos HTTP.
+- Processamento externo real exige consentimento explícito antes de persistir a análise.
+- Respostas operacionais não expõem HTML bruto nem repetem a entrada do usuário.
+- CORS permanece restrito à interface local em `localhost` ou `127.0.0.1`.
+- Cliente Streamlit submete o job e consulta o estado em fragmento periódico, sem espera bloqueante.
+- Estados e veredictos têm rótulos em português e cores explícitas; falha técnica não vira `NEI`.
+- Evidências mantêm links clicáveis; texto exibido e limitações são escapados.
+- A indisponibilidade do BERTimbau usa a mensagem aprovada, sem inferir resultado linguístico.
+- Verificação: `153 passed`; Ruff sem erros. Há apenas um aviso de depreciação
+  do `TestClient` na combinação atual de FastAPI/Starlette, sem impacto funcional.
