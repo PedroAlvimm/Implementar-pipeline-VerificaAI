@@ -51,3 +51,15 @@ Concluída.
 - Extração combina Trafilatura, BeautifulSoup e JSON-LD preservando o texto original.
 - HTML permitido é comprimido atomicamente fora do SQLite, com SHA-256 e cota cumulativa.
 - Verificação: `75 passed`; Ruff sem erros.
+
+## Tarefa 5 — LLM, claims e consultas
+
+Concluída.
+
+- Contratos independentes para extração de claims e geração de consultas.
+- Primeiro adaptador real usa Responses API via HTTPX e JSON Schema estrito.
+- Nenhum modelo padrão é ocultado; chave, modelo e consentimento são obrigatórios.
+- Saídas fora do schema recebem uma única correção e depois falham explicitamente.
+- Claims sem trecho literal são rejeitadas; IDs e URLs externos ao conjunto são bloqueados.
+- Orçamento de chamadas e tokens é verificado antes de cada requisição.
+- Verificação: `91 passed`; Ruff sem erros.

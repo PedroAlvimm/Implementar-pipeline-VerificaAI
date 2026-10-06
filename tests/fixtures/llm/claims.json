@@ -1,0 +1,17 @@
+{
+  "claims": [
+    {
+      "id": "claim_01",
+      "text": "O município não comprou 10 milhões de doses.",
+      "original_excerpt": "O município não comprou 10 milhões de doses em janeiro de 2026.",
+      "claim_type": "quantitative",
+      "checkable": true,
+      "priority": "high",
+      "entities": ["município", "10 milhões", "doses"],
+      "event_date": "2026-01-01",
+      "valid_from": null,
+      "valid_until": null,
+      "temporal_scope": "janeiro de 2026"
+    }
+  ]
+}
