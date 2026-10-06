@@ -27,3 +27,17 @@ Concluída.
 - Implementada retenção de 30 dias para análises e 7 dias para artefatos brutos.
 - HTML permanece fora do SQLite; documentos guardam somente caminho, hash e metadados.
 - Verificação: `26 passed`; Ruff sem erros.
+
+## Tarefa 3 — Segurança de entrada e SSRF
+
+Concluída.
+
+- Validação de texto e URL com preservação de números, acentos e negação.
+- Bloqueio explícito de loopback, redes privadas, link-local, multicast, reservados,
+  não especificados, documentação e representações numéricas ambíguas.
+- Todos os endereços A/AAAA são validados e a conexão usa o IP aprovado com Host/SNI.
+- Redirecionamentos são manuais, revalidados e removem credenciais ao mudar de origem.
+- `robots.txt` usa cache, respeita regras e falha fechado quando está indisponível.
+- Limitação residual: o transporte local não implementa pooling; isso privilegia isolamento
+  e auditabilidade na PoC, com custo de latência por conexão.
+- Verificação: `62 passed`; Ruff sem erros.
