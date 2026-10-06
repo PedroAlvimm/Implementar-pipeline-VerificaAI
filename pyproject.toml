@@ -40,7 +40,8 @@ dev = [
 include = ["app*", "analyses*", "verificaai*"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+DJANGO_SETTINGS_MODULE = "verificaai.settings.test"
+addopts = "-ra --ds=verificaai.settings.test"
 testpaths = ["tests"]
 
 [tool.ruff]

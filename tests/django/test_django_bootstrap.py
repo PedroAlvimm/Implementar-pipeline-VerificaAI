@@ -6,6 +6,8 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
+import pytest
+
 
 def test_django_boots_with_localhost_defaults() -> None:
     """A missing app registration or unsafe host default must break startup."""
@@ -41,6 +43,7 @@ def test_local_settings_prepare_database_directory(tmp_path: Path) -> None:
     assert database_directory.is_dir()
 
 
+@pytest.mark.django_db
 def test_test_database_enables_foreign_keys_and_wal(tmp_path: Path) -> None:
     """Every file-backed SQLite connection must receive the safety pragmas."""
     import django
@@ -80,3 +83,23 @@ def test_secret_key_has_no_production_default() -> None:
 
     assert result.returncode != 0
     assert "DJANGO_SECRET_KEY" in result.stderr
+
+
+def test_pytest_uses_test_settings_despite_inherited_module(tmp_path: Path) -> None:
+    probe = tmp_path / "test_settings_probe.py"
+    probe.write_text(
+        "from django.conf import settings\n"
+        "def test_settings():\n"
+        "    assert settings.SETTINGS_MODULE == 'verificaai.settings.test'\n"
+    )
+    environment = os.environ.copy()
+    environment["DJANGO_SETTINGS_MODULE"] = "verificaai.settings.local"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-c", "pyproject.toml", "-q", str(probe)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

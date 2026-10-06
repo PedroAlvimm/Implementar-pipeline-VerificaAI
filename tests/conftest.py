@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import os
 import socket
 
 import pytest
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "verificaai.settings.test")
 
 
 @pytest.fixture(autouse=True)
