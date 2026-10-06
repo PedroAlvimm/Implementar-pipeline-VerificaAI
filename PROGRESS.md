@@ -75,3 +75,15 @@ Concluída.
 - Cópias exatas, aproximadas e republicações declaradas recebem o mesmo grupo.
 - Metadados de fonte são descritivos e não geram probabilidade de verdade.
 - Verificação: `103 passed`; Ruff sem erros.
+
+## Tarefa 7 — Chunking e ranking
+
+Concluída.
+
+- Trechos têm tamanho, sobreposição, índice e identificadores determinísticos.
+- Texto, URL, título, data, documento e grupo de independência são preservados.
+- Ranking BM25 puro combina entidades, números, datas, título e adequação temporal.
+- Bônus oficial só existe quando a claim ou consulta exige documento oficial.
+- Cada resultado expõe fatores auditáveis; não há probabilidade de verdade.
+- No máximo cinco grupos independentes são selecionados por claim.
+- Verificação: `110 passed`; Ruff sem erros.
