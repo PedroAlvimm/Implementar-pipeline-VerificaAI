@@ -41,3 +41,13 @@ Concluída.
 - Limitação residual: o transporte local não implementa pooling; isso privilegia isolamento
   e auditabilidade na PoC, com custo de latência por conexão.
 - Verificação: `62 passed`; Ruff sem erros.
+
+## Tarefa 4 — Coleta, extração e artefatos
+
+Concluída.
+
+- Coletor com cache limitado, rate limiting por domínio e limite de tamanho.
+- Conteúdo não HTML, timeout, `robots.txt`, login, CAPTCHA e paywall têm erros distintos.
+- Extração combina Trafilatura, BeautifulSoup e JSON-LD preservando o texto original.
+- HTML permitido é comprimido atomicamente fora do SQLite, com SHA-256 e cota cumulativa.
+- Verificação: `75 passed`; Ruff sem erros.
