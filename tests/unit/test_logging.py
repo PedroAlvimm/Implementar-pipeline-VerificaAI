@@ -32,7 +32,4 @@ def test_redaction_removes_sensitive_content_recursively() -> None:
 def test_redaction_handles_sensitive_items_inside_lists() -> None:
     event = {"items": [{"text": "não registrar"}, {"status": "ok"}]}
 
-    assert redact_sensitive(event) == {
-        "items": [{"text": "[REDACTED]"}, {"status": "ok"}]
-    }
-
+    assert redact_sensitive(event) == {"items": [{"text": "[REDACTED]"}, {"status": "ok"}]}

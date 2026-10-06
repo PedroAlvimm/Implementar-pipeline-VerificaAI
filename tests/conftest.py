@@ -11,4 +11,3 @@ def block_unmocked_network(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError(f"A suíte tentou acessar a rede sem mock: {address!r}")
 
     monkeypatch.setattr(socket.socket, "connect", blocked_connect)
-
