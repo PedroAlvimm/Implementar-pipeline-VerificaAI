@@ -1,5 +1,10 @@
 # VerificaAI — migração integral para Django
 
+> **Substituído para a entrega 1.0:** este desenho registra a arquitetura ampliada discutida
+> anteriormente. A implementação atual deve seguir
+> `2026-10-06-verificaai-1-0-simplified-design.md`, que remove a infraestrutura distribuída do
+> escopo local.
+
 **Data:** 2026-10-06  
 **Status:** desenho aprovado e revisado com requisitos de execução auditável; aguardando
 aprovação da especificação escrita
