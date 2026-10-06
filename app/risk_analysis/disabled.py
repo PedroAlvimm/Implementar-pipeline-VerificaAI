@@ -14,4 +14,3 @@ class DisabledRiskAnalyzer:
             "model_version": None,
             "message": "O modelo de risco textual ainda não foi integrado.",
         }
-

@@ -60,4 +60,3 @@ class Settings(BaseSettings):
                 "OPENAI_API_KEY e OPENAI_MODEL são obrigatórios no modo real"
             )
         return self
-

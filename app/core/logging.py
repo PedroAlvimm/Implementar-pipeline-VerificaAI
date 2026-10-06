@@ -33,4 +33,3 @@ def redact_sensitive(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(redact_sensitive(item) for item in value)
     return value
-

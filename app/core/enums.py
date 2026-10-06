@@ -33,4 +33,3 @@ class ConfidenceLevel(StrEnum):
     MEDIUM = "MEDIUM"
     LOW = "LOW"
     INSUFFICIENT = "INSUFFICIENT"
-

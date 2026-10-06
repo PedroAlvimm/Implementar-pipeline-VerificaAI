@@ -16,4 +16,3 @@ class RiskAnalyzer(Protocol):
     def analyze(self, text: str) -> RiskAnalysisResult:
         """Analyze textual risk without affecting factual verification."""
         ...
-

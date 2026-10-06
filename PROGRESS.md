@@ -87,3 +87,16 @@ Concluída.
 - Cada resultado expõe fatores auditáveis; não há probabilidade de verdade.
 - No máximo cinco grupos independentes são selecionados por claim.
 - Verificação: `110 passed`; Ruff sem erros.
+
+## Tarefa 8 — Julgamento, agregação e relatórios
+
+Concluída.
+
+- Julgamentos usam contratos estritos e aceitam somente IDs fornecidos ao modelo.
+- Toda citação é mapeada de volta para caracteres literais da evidência armazenada.
+- Uma saída inválida recebe uma única tentativa de correção e depois falha explicitamente.
+- Agregação considera independência, fonte primária e adequação temporal.
+- Cópias do mesmo conteúdo não contam como confirmações independentes.
+- Erros técnicos e evidência insuficiente permanecem distintos de refutação.
+- Relatórios rejeitam claims, evidências, URLs ou conclusões factuais sem lastro.
+- Verificação: `125 passed`; Ruff sem erros.
