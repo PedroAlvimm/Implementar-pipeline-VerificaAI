@@ -63,3 +63,15 @@ Concluída.
 - Claims sem trecho literal são rejeitadas; IDs e URLs externos ao conjunto são bloqueados.
 - Orçamento de chamadas e tokens é verificado antes de cada requisição.
 - Verificação: `91 passed`; Ruff sem erros.
+
+## Tarefa 6 — Busca e independência de fontes
+
+Concluída.
+
+- Primeiro adaptador real usa Brave Web Search apenas para descobrir páginas.
+- Resultados preservam consulta, ranking, snippet, domínio e data quando disponível.
+- Domínios e caminhos de fact-checking são excluídos por configuração auditável.
+- URLs são canonicalizadas e deduplicadas sem remover parâmetros funcionais.
+- Cópias exatas, aproximadas e republicações declaradas recebem o mesmo grupo.
+- Metadados de fonte são descritivos e não geram probabilidade de verdade.
+- Verificação: `103 passed`; Ruff sem erros.
