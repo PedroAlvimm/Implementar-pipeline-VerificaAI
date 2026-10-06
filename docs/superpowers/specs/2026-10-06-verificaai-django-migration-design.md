@@ -1,7 +1,8 @@
 # VerificaAI — migração integral para Django
 
 **Data:** 2026-10-06  
-**Status:** desenho aprovado em conversa; aguardando revisão da especificação escrita
+**Status:** desenho aprovado e revisado com requisitos de execução auditável; aguardando
+aprovação da especificação escrita
 
 ## 1. Objetivo
 
@@ -30,6 +31,12 @@ persistência, administração local e execução assíncrona limitada.
 9. O banco legado é preservado; nenhuma etapa destrutiva é automática.
 10. O corte remove completamente FastAPI, Streamlit e SQLAlchemy somente após equivalência
     funcional comprovada.
+11. Reexecuções criam novos registros imutáveis; resultados anteriores nunca são sobrescritos.
+12. Toda execução registra versões suficientes para explicar e reproduzir seu comportamento.
+13. Detector de fake news e recuperação/ranking semântico são capacidades distintas, sem
+    compartilhamento implícito de scores ou modelos.
+14. Esta arquitetura delimita uma aplicação local; operação pública em produção exige uma
+    etapa arquitetural posterior.
 
 ## 3. Arquitetura de destino
 
@@ -43,7 +50,7 @@ Templates Django + polling HTTP
 Views Django / Django REST Framework
    |
    v
-Serviço de análises + fila local limitada
+Serviço de análises + AnalysisRun + fila local limitada
    |-- coleta segura de entrada e URLs
    |-- extração e validação de afirmações
    |-- descoberta, coleta e ranking de evidências
@@ -70,8 +77,11 @@ Django traduzirão modelos persistidos para os objetos do domínio e vice-versa.
 - **`claims`, `search`, `evidence` e `fact_checking`**: regras existentes independentes do web
   framework.
 - **`risk_analysis`**: contrato tipado, cache e inferência local do BERTimbau.
+- **`semantic_ranking`**: fronteira reservada para um futuro modelo de recuperação ou
+  reranking; não usa o detector BERTimbau e não faz parte desta entrega.
 - **`reports`**: construção e validação do relatório auditável.
 - **`jobs`**: interface de execução assíncrona e implementação local limitada.
+- **`observability`**: contexto de correlação, logs estruturados e métricas operacionais.
 
 O Django Admin permitirá inspeção de análises, estados, limitações e relatórios. Segredos,
 HTML bruto, cookies, cabeçalhos de autorização e conteúdo sensível não serão exibidos.
@@ -83,14 +93,17 @@ destino preservarão os conceitos atuais:
 
 | Modelo Django | Conteúdo principal |
 |---|---|
-| `Analysis` | entrada, tipo, hash, estado, erro, limitações e timestamps |
-| `Claim` | afirmação validada, prioridade, tipo e entidades |
-| `Query` | consultas geradas por afirmação |
-| `SearchResult` | metadados de resultados descobertos |
-| `Evidence` | trecho, fonte, grupo de independência e datas |
-| `Decision` | decisão por evidência e citação validada |
-| `Report` | relatório final estruturado e versão do contrato |
-| `Artifact` | caminho relativo, hash, tamanho, compressão e retenção |
+| `Analysis` | identidade estável da solicitação, entrada, hash e estado agregado |
+| `AnalysisRun` | uma execução auditável, ordinal, versões, estado, erro e timestamps |
+| `Job` | tentativa assíncrona, lease, retry, estado e correlation IDs |
+| `BERTAnalysis` | execução auxiliar ligada ao run, estado, versão, rótulo e score |
+| `Claim` | afirmação validada de um run, prioridade, tipo e entidades |
+| `Query` | consultas geradas por afirmação e versão do gerador |
+| `SearchResult` | metadados de resultados descobertos por run |
+| `Evidence` | trecho, fonte, grupo de independência e datas por run |
+| `Decision` | decisão por evidência, citação validada e versão do julgador |
+| `Report` | relatório imutável de um run e versão do contrato |
+| `Artifact` | caminho relativo, hash, tamanho, compressão e retenção por run |
 
 Chaves primárias, identificadores de domínio e timestamps legados serão preservados quando
 existirem. Restrições de unicidade e relacionamentos impedirão duplicação silenciosa. Payloads
@@ -99,6 +112,91 @@ consultados ou relacionais terão colunas próprias.
 
 SQLite permanece como padrão local. A modelagem e as transações não dependerão de extensões
 específicas, permitindo migração futura para PostgreSQL sem fazer parte desta entrega.
+
+### 4.1 Reexecuções e imutabilidade
+
+`Analysis` representa a solicitação e sua entrada canônica. Cada execução cria um novo
+`AnalysisRun` com ordinal crescente e nunca reutiliza as linhas de claims, consultas,
+evidências, decisões, artefatos ou relatório de outro run. A ação “executar novamente” cria um
+run e um job novos; ela não limpa nem modifica o run anterior.
+
+O estado exibido em `Analysis` é o estado agregado do run mais recente, enquanto histórico e
+API permitem selecionar qualquer run. Idempotência do `POST` inicial evita análises duplicadas;
+idempotência de reexecução vale somente para a mesma chave e mesma operação de criação de run.
+
+### 4.2 Versionamento integral do pipeline
+
+Cada `AnalysisRun` armazenará um manifesto imutável com:
+
+- versão lógica e hash da configuração do pipeline;
+- commit Git da aplicação e indicação explícita de árvore modificada quando aplicável;
+- versão do schema do relatório e das migrations Django;
+- provedor, modelo, revisão e parâmetros de cada LLM;
+- versão e SHA-256 de cada prompt ou template usado;
+- versão do gerador de consultas, chunking, ranking, agregação e validação de citações;
+- snapshot dos limites que alteram comportamento;
+- identificador e manifesto de hashes do BERTimbau;
+- versões relevantes de Python, Django, Transformers e PyTorch.
+
+Segredos e conteúdo sensível nunca entram no manifesto. Se uma versão obrigatória não puder ser
+determinada, o run não será apresentado como reproduzível e registrará uma limitação explícita.
+
+### 4.3 Máquinas de estado
+
+Transições serão implementadas por métodos de serviço transacionais; alterações diretas de
+estado pelo Admin ou por `save()` genérico serão bloqueadas.
+
+**`Analysis`**
+
+```text
+CREATED -> RUNNING -> COMPLETED
+        -> FAILED
+                   -> COMPLETED_WITH_LIMITATIONS
+                   -> FAILED
+COMPLETED | COMPLETED_WITH_LIMITATIONS | FAILED -> RUNNING  (novo AnalysisRun)
+qualquer estado terminal -> ARCHIVED
+```
+
+`Analysis` reflete o run mais recente. Uma reexecução não reabre nem modifica o run anterior.
+
+**`AnalysisRun`**
+
+```text
+PENDING -> COLLECTING -> EXTRACTING_CLAIMS -> SEARCHING -> CHECKING
+        -> FACTUAL_COMPLETED -> COMPLETED
+                             -> COMPLETED_WITH_LIMITATIONS
+qualquer estado não terminal -> FAILED | INTERRUPTED
+```
+
+`FACTUAL_COMPLETED` significa que o relatório factual já foi persistido e pode ser entregue,
+mesmo que o BERTimbau ainda esteja pendente ou falhe.
+
+**`Job`**
+
+```text
+QUEUED -> RUNNING -> SUCCEEDED
+                  -> FAILED
+                  -> INTERRUPTED
+QUEUED -> CANCELLED
+FAILED | INTERRUPTED --política de retry--> novo Job em QUEUED
+```
+
+Cada `Job` representa uma tentativa e preserva número, causa, horários e lease. Não existe
+transição de um estado terminal de volta para `RUNNING`; retry cria outro `Job` auditável com
+referência `retry_of` para a tentativa anterior.
+
+**`BERTAnalysis`**
+
+```text
+PENDING -> RUNNING -> AVAILABLE
+                   -> TECHNICAL_ERROR
+                   -> TIMED_OUT
+PENDING -> DISABLED
+RUNNING -> INTERRUPTED
+```
+
+Estados terminais são imutáveis. Um novo teste linguístico exige outro `BERTAnalysis`, ligado ao
+mesmo run ou a um novo run conforme a ação solicitada.
 
 ## 5. Migração do banco legado
 
@@ -117,6 +215,8 @@ O comando terá as seguintes propriedades:
 - transação única ou lotes transacionais com checkpoint explicitamente auditado;
 - validação do schema legado antes da primeira gravação;
 - preservação de IDs, datas, estados, relações e payloads;
+- conversão de cada análise legada em `Analysis` e `AnalysisRun` ordinal 1, sem reescrever o
+  significado do resultado original;
 - idempotência por chaves estáveis, sem duplicar registros na repetição;
 - `--dry-run` com contagens e inconsistências, sem gravações;
 - rollback integral do lote em caso de erro;
@@ -136,6 +236,9 @@ Django REST Framework preservará, sempre que o contrato atual permitir:
 - `GET /api/v1/analyses/{analysis_id}`
 - `GET /api/v1/analyses/{analysis_id}/claims`
 - `GET /api/v1/analyses/{analysis_id}/report`
+- `GET /api/v1/analyses/{analysis_id}/runs`
+- `POST /api/v1/analyses/{analysis_id}/runs`
+- `GET /api/v1/analyses/{analysis_id}/runs/{run_id}/report`
 
 Serão mantidos códigos HTTP, `Idempotency-Key`, `Location`, validação de entrada, consentimento
 para provedores externos e distinção entre análise pendente, em execução, concluída, concluída
@@ -158,6 +261,7 @@ A interface substituirá integralmente o Streamlit e oferecerá:
 - limitações técnicas separadas de `NEI`;
 - painel independente da análise linguística auxiliar;
 - histórico local e reabertura de análises concluídas;
+- reexecução explícita que preserva e permite comparar runs anteriores;
 - mensagens de erro em português brasileiro.
 
 Templates Django produzirão HTML no servidor. JavaScript pequeno e sem framework será usado
@@ -176,11 +280,54 @@ Requisitos:
 - limite explícito de workers e itens aguardando;
 - rejeição controlada quando a capacidade acabar;
 - recuperação de jobs interrompidos após reinício;
+- lease persistido com heartbeat para distinguir job ativo de processo morto;
 - nenhum bloqueio da thread de requisição durante uma análise;
 - transações curtas e conexões ORM abertas somente quando necessárias;
 - interface substituível futuramente por Celery sem alterar o pipeline.
 
 Celery e Redis ficam fora do escopo desta entrega.
+
+### 8.1 Retry e backoff
+
+Retries serão definidos por categoria, nunca por um `except Exception` genérico:
+
+| Categoria | Política |
+|---|---|
+| validação de entrada, SSRF, `robots.txt` negado, schema ou hash inválido | sem retry |
+| timeout, reset de conexão, DNS público temporariamente indisponível | até 2 novas tentativas, backoff exponencial com jitter |
+| HTTP `429` | respeitar `Retry-After`, limitado pelo orçamento total; no máximo 2 tentativas |
+| HTTP `5xx` transitório | até 2 novas tentativas com jitter; `4xx` não recebe retry, exceto `429` |
+| saída LLM inválida | uma correção controlada já prevista; depois falha explícita |
+| bucket/modelo BERT indisponível | até 2 tentativas de materialização; inferência inválida não é repetida automaticamente |
+| SQLite ocupado | poucas tentativas curtas e limitadas; esgotamento vira erro operacional explícito |
+| erro determinístico de código, integridade ou permissão | sem retry automático |
+
+O backoff respeitará deadline e orçamento do run. Cada tentativa cria ou atualiza registros de
+tentativa auditáveis, preserva a causa anterior e nunca duplica efeitos já confirmados. A
+aleatoriedade do jitter será injetável para testes determinísticos.
+
+### 8.2 Crash recovery real
+
+No startup, o executor reconciliará jobs `RUNNING` cujo lease expirou. Eles serão marcados como
+`INTERRUPTED`; somente etapas idempotentes elegíveis gerarão uma nova tentativa `QUEUED`.
+Estados e checkpoints persistidos decidirão onde retomar, sem inferir sucesso pela ausência de
+erro.
+
+Os testes iniciarão um worker em subprocesso, interromperão o processo durante etapas
+controladas e iniciarão outro processo contra o mesmo banco. Eles verificarão lease expirado,
+estado `INTERRUPTED`, retry permitido, ausência de duplicação e preservação do relatório factual
+quando o crash ocorrer depois de `FACTUAL_COMPLETED`.
+
+### 8.3 Limite de SQLite com threads
+
+SQLite é aceitável somente para a versão local, com poucos workers e uma única instância da
+aplicação. Escritas concorrentes são serializadas pelo banco e podem gerar `database is locked`;
+transações longas, compartilhamento de conexões entre threads e múltiplos processos aumentam o
+risco. Cada thread usará sua própria conexão, transações serão curtas, WAL e timeout serão
+configurados e a concorrência continuará baixa e explícita.
+
+Essas medidas reduzem contenção, mas não transformam SQLite em banco de produção concorrente.
+PostgreSQL é requisito da futura etapa de produção pública.
 
 ## 9. BERTimbau auxiliar
 
@@ -216,6 +363,11 @@ Um snapshot local já validado permanece utilizável quando o bucket estiver ind
 o snapshot é fixado por hashes, alterações remotas não são consumidas. Aceitar uma nova versão
 exige revisão e atualização deliberada do manifesto; não há atualização automática.
 
+O BERTimbau fake-news detector não participa de busca, embedding, recuperação ou ranking de
+evidências. Um futuro semantic reranker terá módulo, contrato, modelo, métricas, versionamento e
+testes próprios. Nenhum score ou representação interna do detector poderá ser reutilizado como
+relevância sem uma nova especificação aprovada.
+
 ## 10. Falhas, segurança e privacidade
 
 - As proteções atuais contra SSRF, DNS rebinding, redirecionamentos, portas indevidas e IPs
@@ -233,13 +385,46 @@ exige revisão e atualização deliberada do manifesto; não há atualização a
 - Limites de download, texto, tempo, chamadas, tokens, armazenamento, fila e concorrência
   continuarão centralizados nas settings.
 
-## 11. Testes e validação
+## 11. Correlação e observabilidade
+
+Cada requisição terá `request_id`; cada solicitação persistente, `analysis_id`; cada execução,
+`run_id`; e cada tentativa assíncrona, `job_id`. IDs recebidos do cliente só serão aceitos em
+formato validado; na ausência deles, o servidor criará UUIDs. O `request_id` será devolvido no
+header de resposta e todos os IDs aplicáveis acompanharão contexto de logs, jobs e chamadas a
+adaptadores.
+
+Logs serão JSON estruturado com timestamp, nível, evento, componente, duração, estado, código de
+erro e correlation IDs. Não registrarão texto integral, HTML, prompts preenchidos, evidências,
+cookies, tokens ou chaves. Stack traces ficarão restritos ao log local de erro e nunca serão
+devolvidos pela API.
+
+Métricas operacionais mínimas:
+
+- análises e runs criados, concluídos, limitados, falhos e interrompidos;
+- jobs em fila, em execução, saturação, retries e tempo de espera;
+- duração por etapa e duração total;
+- coleta permitida, bloqueada, falha e bytes baixados;
+- chamadas, tokens, erros e latência por provedor;
+- evidências encontradas, deduplicadas e aceitas por run;
+- estados, latência, truncamento, cache hit/miss e erros do BERTimbau;
+- contenção/locks do SQLite e falhas de persistência;
+- recuperação de crash e jobs órfãos reconciliados.
+
+Métricas não terão texto do usuário, URL completa ou labels de cardinalidade ilimitada. A versão
+local exporá snapshot operacional no Admin e logs; exportadores externos ficam para produção.
+
+## 12. Testes e validação
 
 A suíte usará `pytest`, `pytest-django` e os clientes de teste do Django e DRF. Ela cobrirá:
 
 - compatibilidade dos endpoints e schemas atuais;
 - formulários, templates, acessibilidade textual e polling;
 - transições de estado, idempotência e saturação da fila;
+- transições proibidas das quatro máquinas de estado;
+- reexecução com novo `AnalysisRun` sem alteração dos resultados anteriores;
+- manifesto completo de versões, prompts e commit por run;
+- propagação de `request_id`, `analysis_id`, `run_id` e `job_id`;
+- retry/backoff por categoria, orçamento e idempotência;
 - migração em `--dry-run`, importação, repetição, rollback e reconciliação;
 - preservação de IDs, datas, relações, payloads e relatórios legados;
 - SSRF, DNS rebinding, redirecionamentos e `robots.txt`;
@@ -248,19 +433,21 @@ A suíte usará `pytest`, `pytest-django` e os clientes de teste do Django e DRF
 - cache adulterado, arquivo extra, link simbólico e escritores concorrentes;
 - prova de que qualquer saída ou falha do BERTimbau não muda o veredito factual;
 - execução ponta a ponta em SQLite sem provedores externos;
+- crash recovery em subprocesso real antes e depois de `FACTUAL_COMPLETED`;
+- contenção SQLite sob a concorrência local configurada;
 - corpus de avaliação existente sem regressões.
 
 Testes de rede reais ficarão fora da suíte padrão. Um smoke test opt-in poderá baixar o bucket
 público anonimamente, validar o snapshot, carregar o modelo e executar exemplos conhecidos.
 
-## 12. Fases de implementação e corte
+## 13. Fases de implementação e corte
 
 1. Adicionar o projeto Django e configuração de testes sem remover o sistema atual.
-2. Criar modelos, migrations e o importador do banco legado.
-3. Adaptar a persistência e os serviços do pipeline ao Django ORM.
+2. Criar modelos, state machines, migrations e o importador do banco legado.
+3. Adaptar persistência, versionamento, correlação e serviços do pipeline ao Django ORM.
 4. Implementar a API DRF compatível e seus testes de contrato.
 5. Implementar templates, polling e histórico.
-6. Adaptar jobs e BERTimbau ao fluxo factual-primeiro.
+6. Adaptar jobs, retries, crash recovery, observabilidade e BERTimbau ao fluxo factual-primeiro.
 7. Executar dry-run e migração real dos dados, com reconciliação.
 8. Fazer smoke test ponta a ponta e comparar comportamento com a aplicação anterior.
 9. Remover FastAPI, Streamlit e SQLAlchemy, além dos entrypoints e testes obsoletos.
@@ -270,7 +457,22 @@ Cada fase termina com testes verdes. Enquanto houver dependência funcional do s
 ele permanece executável; o corte acontece somente quando a alternativa Django correspondente
 estiver comprovada.
 
-## 13. Fora do escopo
+## 14. Fronteira de produção
+
+Esta arquitetura é o alvo da versão local e da migração tecnológica. Ela não autoriza exposição
+direta à internet nem é apresentada como arquitetura final de produção pública.
+
+Antes de produção pública será necessária outra especificação, no mínimo com PostgreSQL,
+fila/worker persistente como Celery, armazenamento de objetos, autenticação e autorização,
+gestão de segredos, TLS e proxy reverso, rate limiting distribuído, backups e restauração,
+retenção legal, monitoramento/alertas externos, SLOs, capacidade, alta disponibilidade,
+isolamento de rede e processo, sandboxing de coleta e revisão de privacidade e termos dos
+provedores.
+
+O manifesto de versões, contratos de domínio, correlation IDs e interfaces de job definidos
+aqui são pontos de migração para essa etapa; SQLite e `ThreadPoolExecutor` não são.
+
+## 15. Fora do escopo
 
 - Celery, Redis e workers distribuídos;
 - publicação direta na internet;
@@ -279,8 +481,9 @@ estiver comprovada.
 - retreinamento ou recalibração do BERTimbau;
 - aceitação automática de novas versões do bucket;
 - substituição dos provedores externos ainda não operacionalizados.
+- semantic retrieval/reranking e qualquer reutilização do detector BERTimbau para esse fim.
 
-## 14. Critérios de aceitação
+## 16. Critérios de aceitação
 
 A migração estará concluída quando:
 
@@ -293,4 +496,10 @@ A migração estará concluída quando:
 7. as proteções de rede, evidência, citação, recursos e privacidade continuarem verdes;
 8. testes, lint, corpus de avaliação e smoke test local passarem;
 9. documentação permitir instalação e execução a partir de um ambiente limpo;
-10. o sistema completo executar localmente com Django, SQLite e fila local, sem Redis.
+10. o sistema completo executar localmente com Django, SQLite e fila local, sem Redis;
+11. reexecuções criarem runs imutáveis sem sobrescrever resultados anteriores;
+12. state machines rejeitarem toda transição não permitida;
+13. cada run persistir manifesto completo de versões e correlation IDs;
+14. retries, observabilidade e crash recovery real passarem nos testes definidos;
+15. documentação declarar inequivocamente que SQLite e fila local não são a fronteira de
+    produção pública.
