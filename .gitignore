@@ -10,3 +10,4 @@ __pycache__/
 artifacts/
 data/
 .superpowers/
+.worktrees/
