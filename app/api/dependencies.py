@@ -10,6 +10,7 @@ from app.database.repositories import AnalysisRepository
 from app.database.session import build_engine, build_session_factory
 from app.ingestion.url_loader import build_safe_url_loader
 from app.reports.builder import ReportBuilder
+from app.risk_analysis.bertimbau import BertimbauRiskAnalyzer, HuggingFaceBucketStore
 from app.risk_analysis.disabled import DisabledRiskAnalyzer
 from app.services.demo import DemoServices
 from app.services.jobs import JobExecutor
@@ -22,6 +23,19 @@ class AppContainer:
     sessions: Any
     executor: Any
     settings: Settings
+
+
+def build_risk_analyzer(settings: Settings):
+    if settings.risk_model_mode == "disabled":
+        return DisabledRiskAnalyzer()
+    token = settings.hf_token.get_secret_value() if settings.hf_token else None
+    return BertimbauRiskAnalyzer(
+        store=HuggingFaceBucketStore(
+            cache_dir=settings.bertimbau_cache_dir,
+            token=token,
+        ),
+        max_length=settings.bertimbau_max_input_tokens,
+    )
 
 
 def build_default_container(settings: Settings | None = None) -> AppContainer:
@@ -45,7 +59,7 @@ def build_default_container(settings: Settings | None = None) -> AppContainer:
             document_loader=demo,
             judge=demo,
             report_builder=ReportBuilder(),
-            risk_analyzer=DisabledRiskAnalyzer(),
+            risk_analyzer=build_risk_analyzer(current),
             url_loader=build_safe_url_loader(current),
             limits=PipelineLimits(
                 timeout_seconds=current.analysis_timeout_seconds,

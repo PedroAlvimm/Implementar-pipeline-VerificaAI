@@ -29,6 +29,7 @@ from app.evidence.source_metadata import SourceType
 from app.fact_checking.aggregation import DecisionSource, aggregate_claim
 from app.fact_checking.judgment import JudgmentEvidence, validate_decision
 from app.ingestion.url_loader import UrlInputFailure
+from app.risk_analysis.base import RiskAnalysisResult
 
 
 class LoadedInput(BaseModel):
@@ -197,7 +198,7 @@ class AnalysisPipeline:
                 if limitations
                 else AnalysisStatus.COMPLETED
             )
-            risk = self.risk_analyzer.analyze(loaded.text)
+            risk = self._analyze_risk(loaded.text)
             report = self.report_builder.build(
                 analysis_id=analysis_id,
                 status=final_status,
@@ -235,6 +236,22 @@ class AnalysisPipeline:
             return self.url_loader(record.original_input)
         except TimeoutError as exc:
             raise InputCollectionError from exc
+
+    def _analyze_risk(self, text: str) -> RiskAnalysisResult:
+        try:
+            return self.risk_analyzer.analyze(text)
+        except Exception:
+            return {
+                "status": "technical_error",
+                "label": None,
+                "score": None,
+                "model_name": None,
+                "model_version": None,
+                "message": (
+                    "Análise linguística auxiliar indisponível por falha técnica; "
+                    "isso não altera o resultado factual."
+                ),
+            }
 
     def _discover_evidence(
         self,

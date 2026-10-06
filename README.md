@@ -46,11 +46,13 @@ Requer Python 3.11 ou superior.
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install -e '.[dev,bertimbau]'
 cp .env.example .env
 ```
 
-O projeto não exige instalação global nem `sudo`.
+O projeto não exige instalação global nem `sudo`. O extra `bertimbau` instala PyTorch,
+Transformers e o cliente do Hugging Face; por isso a instalação é maior que a versão sem o
+classificador.
 
 ## Demonstração local
 
@@ -58,6 +60,7 @@ Em um terminal:
 
 ```bash
 APP_ENV=demo PROVIDER_MODE=fake \
+  RISK_MODEL_MODE=bertimbau \
   .venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
@@ -79,6 +82,16 @@ Fontes divergem sobre a compra de 10 ambulâncias pelo Município Alfa em 2024.
 
 Elas exercitam, respectivamente, sustentada, refutada, evidência insuficiente e conflito.
 Todos os nomes, documentos e domínios do modo demo são fictícios.
+
+Na primeira análise com `RISK_MODEL_MODE=bertimbau`, a API baixa aproximadamente 436 MB do
+bucket público `Alvinn007/bertimbau-fakenews-detector-v4-bucket`. Os quatro artefatos são
+comparados com tamanhos, identificadores remotos e hashes SHA-256 fixados antes da carga. As
+execuções seguintes reutilizam `BERTIMBAU_CACHE_DIR`. `HF_TOKEN` é opcional para esse bucket
+público e, quando usado, deve permanecer somente no arquivo `.env` ou no ambiente.
+
+O rótulo `FALSA`/`VERDADEIRA` é apresentado como análise linguística auxiliar. Ele nunca
+altera os resultados factuais `SUPPORTED`, `REFUTED`, `NEI` ou `CONFLICTING`. Textos acima de
+512 tokens são truncados para o classificador, e isso aparece explicitamente no relatório.
 
 Entradas de texto não usam rede. Ao selecionar `url`, o sistema acessa a página pública
 informada, respeita `robots.txt`, extrai o texto e depois usa o pipeline fictício local. Uma
@@ -124,4 +137,4 @@ O padrão retém análises por 30 dias e artefatos brutos por 7 dias. Reinícios
 interrompidos com `PROCESS_INTERRUPTED` em vez de inventar um resultado.
 
 Consulte [segurança](docs/security.md), [limitações](docs/limitations.md) e
-[integração futura do BERTimbau](docs/bertimbau-integration.md).
+[integração do BERTimbau](docs/bertimbau-integration.md).

@@ -40,9 +40,17 @@ não é retornado pela API e fica fora do SQLite. Logs aplicam redação a segre
 comandos documentados restringem a aplicação a `localhost`; esta PoC não deve ser publicada
 diretamente na internet.
 
+## Modelo local e cadeia de fornecimento
+
+O BERTimbau é baixado somente do bucket explicitamente configurado. Como esse armazenamento é
+mutável, tamanho, identificador Xet e SHA-256 de cada artefato são fixados no código; divergência
+interrompe a carga. O download é promovido ao cache apenas depois da validação completa. A carga
+usa `safetensors`, bloqueia código remoto e opera localmente após o download. `HF_TOKEN`, quando
+necessário, é lido de segredo de ambiente e não deve aparecer em logs ou relatórios. O rótulo do
+modelo é isolado do veredito factual e qualquer falha vira indisponibilidade técnica.
+
 ## Resposta operacional
 
 Em caso de suspeita: interrompa API e UI, revogue chaves externas, preserve o SQLite e os hashes
 para auditoria, remova artefatos conforme a política de retenção e execute novamente os testes
 de segurança antes de reativar o serviço.
-

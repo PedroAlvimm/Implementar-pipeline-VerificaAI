@@ -21,6 +21,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+bertimbau = [
+  "huggingface-hub>=1.0,<2",
+  "torch>=2.9,<3",
+  "transformers>=5.0,<6",
+]
 dev = [
   "pytest>=8,<10",
   "pytest-cov>=6,<8",
@@ -44,4 +49,3 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.format]
 quote-style = "double"
-

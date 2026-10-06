@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -30,6 +32,9 @@ def test_settings_apply_safe_poc_defaults() -> None:
     assert settings.domain_requests_per_second == 1
     assert settings.domain_concurrency == 2
     assert settings.provider_attempts == 2
+    assert settings.risk_model_mode == "disabled"
+    assert settings.bertimbau_cache_dir == Path("data/models/bertimbau-v4")
+    assert settings.bertimbau_max_input_tokens == 512
 
 
 def test_fake_provider_is_rejected_outside_test_or_demo() -> None:

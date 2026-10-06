@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_model: str | None = None
     brave_search_api_key: SecretStr | None = None
+    hf_token: SecretStr | None = None
     log_level: str = "INFO"
+    risk_model_mode: Literal["disabled", "bertimbau"] = "disabled"
+    bertimbau_cache_dir: Path = Path("data/models/bertimbau-v4")
+    bertimbau_max_input_tokens: int = Field(default=512, ge=8, le=512)
 
     max_input_chars: int = 100_000
     max_download_bytes: int = 5 * 1024 * 1024

@@ -112,7 +112,7 @@ def pipeline_factory(tmp_path: Path):
     sessions = build_session_factory(engine)
     repository = AnalysisRepository(sessions)
 
-    def make(scenario: dict[str, str], **limit_overrides):
+    def make(scenario: dict[str, str], risk_analyzer=None, **limit_overrides):
         services = ScenarioServices(scenario)
         limits = PipelineLimits(**limit_overrides)
         pipeline = AnalysisPipeline(
@@ -124,7 +124,7 @@ def pipeline_factory(tmp_path: Path):
             document_loader=services,
             judge=services,
             report_builder=ReportBuilder(),
-            risk_analyzer=DisabledRiskAnalyzer(),
+            risk_analyzer=risk_analyzer or DisabledRiskAnalyzer(),
             limits=limits,
         )
         return pipeline, repository, sessions
@@ -238,3 +238,24 @@ def test_partial_pipeline_has_explicit_limitations(pipeline_factory) -> None:
 
     assert result.status == AnalysisStatus.COMPLETED_WITH_LIMITATIONS
     assert "claim_01:document_unavailable" in result.limitations
+
+
+def test_risk_model_failure_does_not_change_factual_result(pipeline_factory) -> None:
+    class ExplodingRiskAnalyzer:
+        def analyze(self, text: str):
+            raise RuntimeError("model crashed")
+
+    scenario = json.loads(Path("tests/fixtures/demo/supported.json").read_text())
+    pipeline, repository, sessions = pipeline_factory(
+        scenario,
+        risk_analyzer=ExplodingRiskAnalyzer(),
+    )
+    created = repository.create(AnalysisCreate(input_type="text", content=scenario["text"]))
+
+    result = pipeline.run(created.id)
+
+    assert result.status == AnalysisStatus.COMPLETED
+    with sessions() as session:
+        report = session.scalar(select(ReportRecord)).payload
+    assert report["claims"][0]["verdict"] == "SUPPORTED"
+    assert report["risk_status"]["status"] == "technical_error"

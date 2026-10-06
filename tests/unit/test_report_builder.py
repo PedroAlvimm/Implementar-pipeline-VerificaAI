@@ -71,6 +71,34 @@ def test_report_contains_only_stored_evidence_and_exact_risk_copy() -> None:
     assert report.claims[0].evidence[0].retrieved_at.isoformat() == "2026-10-06T00:00:00+00:00"
 
 
+def test_report_exposes_available_risk_as_auxiliary_not_as_factual_verdict() -> None:
+    risk_message = (
+        "Análise linguística auxiliar: FALSA (97,00%). "
+        "Este resultado não determina a veracidade factual."
+    )
+    report = ReportBuilder().build(
+        analysis_id="analysis-1",
+        status=AnalysisStatus.COMPLETED,
+        original_input="O município comprou 10 milhões de doses.",
+        title=None,
+        claims=[claim()],
+        claim_results=[result()],
+        evidence_by_id={"ev_001": evidence()},
+        risk={
+            "status": "available",
+            "label": "FALSA",
+            "score": 0.97,
+            "model_name": "bucket",
+            "model_version": "version",
+            "message": risk_message,
+        },
+        analyzed_at=datetime(2026, 10, 6, tzinfo=UTC),
+    )
+
+    assert report.risk_message == risk_message
+    assert report.claims[0].verdict is Verdict.REFUTED
+
+
 def test_report_rejects_unknown_evidence_url_or_identifier() -> None:
     with pytest.raises(ReportValidationError, match="ev_unknown"):
         ReportBuilder().build(

@@ -75,7 +75,11 @@ class ReportBuilder:
             original_input=original_input,
             title=title,
             risk_status=dict(risk),
-            risk_message="Análise linguística: aguardando integração do BERTimbau.",
+            risk_message=(
+                "Análise linguística: aguardando integração do BERTimbau."
+                if risk["status"] == "modelo_indisponivel"
+                else risk["message"]
+            ),
             overall_result=aggregate_analysis(claim_results),
             claims=report_claims,
             limitations=list(dict.fromkeys(all_limitations)),

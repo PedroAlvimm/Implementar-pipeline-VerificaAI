@@ -20,8 +20,13 @@ produção. Permanecem:
 - O executor usa threads no processo. Reinícios são detectados, mas não há fila distribuída.
 - O transporte prioriza pinagem e auditabilidade, sem pooling; isso aumenta latência.
 - `robots.txt` falha fechado, portanto indisponibilidade pode impedir coleta permitida.
-- O BERTimbau ainda não foi integrado. A UI mostra exatamente: "Análise linguística:
-  aguardando integração do BERTimbau."
+- O BERTimbau é um classificador linguístico auxiliar, não um verificador factual. Suas
+  métricas publicadas são auto-relatadas sobre 100 notícias e ainda exigem validação
+  independente de generalização, viés e calibração.
+- A entrada do BERTimbau é limitada a 512 tokens. O relatório informa truncamento, mas uma
+  informação decisiva depois desse limite pode não influenciar o rótulo.
+- O bucket é mutável. Qualquer mudança em relação ao snapshot fixado desativa a inferência
+  até uma atualização deliberada dos hashes.
 - Não há autenticação, autorização multiusuário, TLS, isolamento por tenant nem proteção
   para exposição pública. Use somente em `127.0.0.1`.
 - O aviso de depreciação do `TestClient` decorre da combinação atual FastAPI/Starlette e deve
