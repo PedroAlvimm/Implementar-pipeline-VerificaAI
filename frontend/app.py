@@ -7,7 +7,10 @@ from urllib.parse import urlsplit
 import httpx
 import streamlit as st
 
-from frontend.client import ApiClient
+if __package__:
+    from frontend.client import ApiClient
+else:
+    from client import ApiClient
 
 BERTIMBAU_MESSAGE = "Análise linguística: aguardando integração do BERTimbau."
 
