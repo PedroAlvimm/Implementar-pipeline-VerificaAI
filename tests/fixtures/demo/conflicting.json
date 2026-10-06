@@ -1,0 +1,6 @@
+{
+  "text": "O Município Alfa comprou 10 ambulâncias em 2024.",
+  "claim": "O Município Alfa comprou 10 ambulâncias em 2024.",
+  "evidence": "Uma fonte confirma 10 ambulâncias e outra registra somente 8 ambulâncias.",
+  "verdict": "CONFLICTING"
+}

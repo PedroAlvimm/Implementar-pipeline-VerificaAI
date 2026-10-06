@@ -100,3 +100,19 @@ Concluída.
 - Erros técnicos e evidência insuficiente permanecem distintos de refutação.
 - Relatórios rejeitam claims, evidências, URLs ou conclusões factuais sem lastro.
 - Verificação: `125 passed`; Ruff sem erros.
+
+## Tarefa 9 — Pipeline, jobs e recuperação
+
+Concluída.
+
+- Pipeline síncrono persiste entrada limpa, claims, consultas, resultados, evidências,
+  decisões e relatório, com estado durável entre cada etapa.
+- Entradas de texto e URL percorrem o mesmo fluxo após a coleta segura.
+- Cenários demo cobrem `SUPPORTED`, `REFUTED`, `NEI` e `CONFLICTING` sem rede.
+- Falha técnica de coleta permanece distinta de ausência de evidência.
+- Limites por análise cobrem cinco minutos, chamadas, tokens e armazenamento.
+- Conclusão parcial lista limitações por claim; reexecução terminal não duplica custo.
+- Executor aceita duas análises ativas e dez na fila, rejeitando excesso explicitamente.
+- Jobs duplicados são reaproveitados; exceções ficam registradas sem derrubar os workers.
+- Reinícios marcam trabalhos interrompidos como falha técnica recuperável.
+- Verificação: `141 passed`; Ruff sem erros.
