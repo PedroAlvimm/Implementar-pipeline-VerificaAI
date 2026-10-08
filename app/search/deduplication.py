@@ -46,35 +46,48 @@ def _group_id(seed: str) -> str:
 def group_document_independence(
     documents: list[DocumentCandidate],
 ) -> GroupingResult:
-    assigned: list[DocumentCandidate] = []
-    reasons: dict[str, str] = {}
-    canonical_to_group: dict[str, str] = {}
-    exact_to_group: dict[str, str] = {}
+    canonical_urls = [canonicalize_url(document.url) for document in documents]
+    parents = {url: url for url in canonical_urls}
 
-    for document in documents:
-        canonical = canonicalize_url(document.url)
-        normalized_content = " ".join(sorted(_normalized_words(document.text))).encode()
-        content_hash = hashlib.sha256(normalized_content).hexdigest()
-        group: str | None = None
+    def root(url: str) -> str:
+        parents.setdefault(url, url)
+        while parents[url] != url:
+            parents[url] = parents[parents[url]]
+            url = parents[url]
+        return url
+
+    def join(left: str, right: str) -> None:
+        left_root, right_root = root(left), root(right)
+        parents[max(left_root, right_root)] = min(left_root, right_root)
+
+    reasons: dict[str, str] = {}
+    for index, document in enumerate(documents):
+        canonical = canonical_urls[index]
         reason = "unique_source"
         if document.original_source:
-            group = canonical_to_group.get(canonicalize_url(document.original_source))
-            if group:
-                reason = "declared_original_source"
-        if group is None and content_hash in exact_to_group:
-            group = exact_to_group[content_hash]
-            reason = "exact_content_hash"
-        if group is None:
-            for previous in assigned:
-                if _similarity(document.text, previous.text) >= 0.70:
-                    group = previous.independence_group
-                    reason = "near_duplicate_content"
-                    break
-        if group is None:
-            group = _group_id(canonical)
-        updated = document.model_copy(update={"independence_group": group, "url": canonical})
-        assigned.append(updated)
-        canonical_to_group[canonical] = group
-        exact_to_group[content_hash] = group
+            join(canonical, canonicalize_url(document.original_source))
+            reason = "declared_original_source"
+        for previous_index, previous in enumerate(documents[:index]):
+            previous_url = canonical_urls[previous_index]
+            match_reason = None
+            if canonical == previous_url:
+                match_reason = "canonical_url"
+            elif document.text.strip() and document.text.split() == previous.text.split():
+                match_reason = "exact_content_hash"
+            elif _similarity(document.text, previous.text) >= 0.70:
+                match_reason = "near_duplicate_content"
+            if match_reason:
+                join(canonical, previous_url)
+                if reason == "unique_source":
+                    reason = match_reason
         reasons[document.id] = reason
+    assigned = [
+        document.model_copy(
+            update={
+                "independence_group": _group_id(root(url)),
+                "url": url,
+            }
+        )
+        for document, url in zip(documents, canonical_urls, strict=True)
+    ]
     return GroupingResult(documents=assigned, reasons=reasons)

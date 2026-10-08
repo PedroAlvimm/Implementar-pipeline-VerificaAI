@@ -73,6 +73,18 @@ def test_quote_mapping_returns_original_characters() -> None:
     assert mapped.text in original
 
 
+def test_evidence_normalization_only_changes_unicode_and_whitespace() -> None:
+    from app.fact_checking.quotation import normalize_evidence_text
+
+    assert normalize_evidence_text("  Ac\u0327a\u0303o\n pública\t10.  ") == "Ação pública 10."
+
+
+@pytest.mark.parametrize("quote", ["8 milhões", "o contrato", "prevê oito milhões!", "preve"])
+def test_normalization_does_not_justify_changed_facts_case_or_punctuation(quote):
+    with pytest.raises(JudgmentValidationError):
+        validate_decision(decision(quoted_excerpt=quote), "claim_01", evidence())
+
+
 def test_llm_judge_uses_required_evidence_only_prompt_and_one_repair() -> None:
     class Provider:
         def __init__(self) -> None:

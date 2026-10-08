@@ -66,3 +66,34 @@ def test_group_identifiers_are_deterministic() -> None:
     second = group_document_independence(documents)
 
     assert first.documents[0].independence_group == second.documents[0].independence_group
+
+
+def test_same_canonical_url_cannot_split_an_existing_copy_group():
+    grouped = group_document_independence(
+        [
+            document("a", "https://a.example/x", "Primeiro conteúdo municipal."),
+            document("b", "https://b.example/y", "Primeiro conteúdo municipal."),
+            document(
+                "c",
+                "https://b.example/y?utm_source=news",
+                "Artigo atualizado totalmente diferente.",
+            ),
+        ]
+    )
+    assert len({item.independence_group for item in grouped.documents}) == 1
+
+
+def test_declared_origin_groups_copies_even_when_original_comes_last():
+    grouped = group_document_independence(
+        [
+            document(
+                "copy", "https://copy.example/x", "Resumo local.", "https://origin.example/news"
+            ),
+            document(
+                "origin",
+                "https://origin.example/news",
+                "Relatório integral com informações distintas.",
+            ),
+        ]
+    )
+    assert grouped.documents[0].independence_group == grouped.documents[1].independence_group

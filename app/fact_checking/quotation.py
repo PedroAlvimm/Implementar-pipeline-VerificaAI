@@ -12,6 +12,11 @@ class OriginalQuote:
     end: int
 
 
+def normalize_evidence_text(text: str) -> str:
+    """Canonical storage form: NFC plus collapsed Unicode whitespace, preserving case."""
+    return " ".join(unicodedata.normalize("NFC", text).split())
+
+
 def map_quote_to_original(quote: str, evidence_text: str) -> OriginalQuote:
     normalized_quote = unicodedata.normalize("NFC", quote).strip()
     tokens = normalized_quote.split()
