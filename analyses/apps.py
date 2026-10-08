@@ -24,6 +24,8 @@ class AnalysesConfig(AppConfig):
     name = "analyses"
 
     def ready(self) -> None:
+        # Runtime recovery/workers are explicitly requested by web entrypoints,
+        # never during app loading, migrations, or unrelated management commands.
         connection_created.connect(
             configure_sqlite_connection,
             dispatch_uid="analyses.configure_sqlite_connection",

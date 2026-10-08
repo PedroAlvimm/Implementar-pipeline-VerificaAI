@@ -19,16 +19,76 @@ from app.risk_analysis.bertimbau import (
 from app.risk_analysis.disabled import DisabledRiskAnalyzer
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"status": "unknown"},
+        {"label": "FAKE"},
+        {"score": float("nan")},
+        {"score": float("inf")},
+        {"score": -0.1},
+        {"score": 1.1},
+        {"score": "0.5"},
+        {"extra": True},
+        {"model_version": ""},
+        {"status": "technical_error"},
+    ],
+)
+def test_bert_result_rejects_invalid_provider_output(change):
+    from pydantic import ValidationError
+
+    from app.risk_analysis import base
+
+    assert hasattr(base, "BERTResult"), "Strict BERT result is missing"
+    payload = dict(
+        status="available",
+        label="FALSA",
+        score=0.5,
+        model_name="fixture",
+        model_version="v1",
+        message="Auxiliar",
+    )
+    with pytest.raises(ValidationError):
+        base.BERTResult.model_validate(payload | change)
+
+
+@pytest.mark.parametrize("tamper", ["extra", "hash", "symlink"])
+def test_bucket_cache_revalidates_exact_snapshot_even_after_materializing(tmp_path, tamper):
+    content = b"config"
+    artifact = BucketArtifact("config.json", len(content), "xet", sha256(content).hexdigest())
+    spec = BucketModelSpec("owner/bucket", "v1", (artifact,))
+    target = tmp_path / "v1"
+    target.mkdir()
+    (target / "config.json").write_bytes(content)
+
+    def remote(*args):
+        raise BucketArtifactMismatchError("invalid local snapshot")
+
+    store = HuggingFaceBucketStore(cache_dir=tmp_path, spec=spec, metadata_reader=remote)
+    assert store.materialize() == target  # Valid pinned local data needs no bucket request.
+    if tamper == "extra":
+        (target / "untrusted.py").write_text("untrusted")
+    elif tamper == "hash":
+        (target / "config.json").write_bytes(b"tamper")
+    else:
+        outside = tmp_path / "outside.json"
+        outside.write_bytes(content)
+        (target / "config.json").unlink()
+        (target / "config.json").symlink_to(outside)
+    with pytest.raises(BucketArtifactMismatchError):
+        store.materialize()
+
+
 def test_disabled_risk_analyzer_never_returns_a_label_or_score() -> None:
     result = DisabledRiskAnalyzer().analyze("Uma afirmação qualquer.")
 
-    assert result == {
+    assert result.model_dump() == {
         "status": "modelo_indisponivel",
         "label": None,
         "score": None,
         "model_name": None,
         "model_version": None,
-        "message": "O modelo de risco textual ainda não foi integrado.",
+        "message": "Análise linguística auxiliar indisponível; não altera o resultado factual.",
     }
 
 
@@ -59,7 +119,7 @@ def test_bertimbau_returns_auxiliary_prediction_with_explicit_truncation(tmp_pat
 
     result = analyzer.analyze("Uma afirmação qualquer.")
 
-    assert result == {
+    assert result.model_dump() == {
         "status": "available",
         "label": "FALSA",
         "score": 0.97,

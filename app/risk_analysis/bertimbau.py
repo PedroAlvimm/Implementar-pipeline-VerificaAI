@@ -119,7 +119,11 @@ def _download_bucket_files(
 
 
 class HuggingFaceBucketStore:
-    """Materialize one pinned bucket snapshot into a verified local cache."""
+    """Materialize a pinned snapshot with an exact allowlist and verified hashes.
+
+    A verified local snapshot stays valid without consulting the mutable bucket
+    on each use. Local contents are verified again on every materialize call.
+    """
 
     def __init__(
         self,
@@ -135,16 +139,12 @@ class HuggingFaceBucketStore:
         self.token: str | bool = token if token else False
         self.metadata_reader = metadata_reader
         self.downloader = downloader
-        self._materialized: Path | None = None
         self._lock = threading.Lock()
 
     def materialize(self) -> Path:
         with self._lock:
-            if self._materialized is not None:
-                return self._materialized
             target = self.cache_dir / self.spec.version
             if self._is_valid_local_snapshot(target):
-                self._materialized = target
                 return target
             self._validate_remote_snapshot()
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -162,7 +162,6 @@ class HuggingFaceBucketStore:
             finally:
                 if staging.exists():
                     shutil.rmtree(staging)
-            self._materialized = target
             return target
 
     def _validate_remote_snapshot(self) -> None:
@@ -182,11 +181,16 @@ class HuggingFaceBucketStore:
                 )
 
     def _is_valid_local_snapshot(self, directory: Path) -> bool:
-        if not directory.is_dir():
+        if not directory.is_dir() or directory.is_symlink():
+            return False
+        # The pinned model has only top-level files; reject extras and symlinks.
+        if {path.name for path in directory.iterdir()} != {
+            artifact.path for artifact in self.spec.artifacts
+        }:
             return False
         for artifact in self.spec.artifacts:
             path = directory / artifact.path
-            if not path.is_file() or path.stat().st_size != artifact.size:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size != artifact.size:
                 return False
             digest = sha256()
             with path.open("rb") as stream:
@@ -264,30 +268,34 @@ class BertimbauRiskAnalyzer:
                 if self._backend is None:
                     self._backend = self.backend_factory(self.store.materialize())
                 prediction = self._backend.predict(text, max_length=self.max_length)
-        except Exception:
-            return {
-                "status": "technical_error",
-                "label": None,
-                "score": None,
-                "model_name": BERTIMBAU_BUCKET_ID,
-                "model_version": BERTIMBAU_VERSION,
-                "message": (
-                    "Análise linguística auxiliar indisponível por falha técnica; "
-                    "isso não altera o resultado factual."
+            percentage = f"{prediction.score:.2%}".replace(".", ",")
+            truncation = (
+                f" O texto foi truncado para {self.max_length} tokens."
+                if prediction.truncated
+                else ""
+            )
+            return RiskAnalysisResult(
+                status="available",
+                label=prediction.label,
+                score=prediction.score,
+                model_name=BERTIMBAU_BUCKET_ID,
+                model_version=BERTIMBAU_VERSION,
+                message=(
+                    f"Análise linguística auxiliar: {prediction.label} ({percentage})."
+                    f"{truncation} Este resultado não determina a veracidade factual."
                 ),
-            }
-        percentage = f"{prediction.score:.2%}".replace(".", ",")
-        truncation = (
-            f" O texto foi truncado para {self.max_length} tokens." if prediction.truncated else ""
-        )
-        return {
-            "status": "available",
-            "label": prediction.label,
-            "score": prediction.score,
-            "model_name": BERTIMBAU_BUCKET_ID,
-            "model_version": BERTIMBAU_VERSION,
-            "message": (
-                f"Análise linguística auxiliar: {prediction.label} ({percentage})."
-                f"{truncation} Este resultado não determina a veracidade factual."
-            ),
-        }
+            )
+        except Exception:
+            return RiskAnalysisResult.model_validate(
+                {
+                    "status": "technical_error",
+                    "label": None,
+                    "score": None,
+                    "model_name": BERTIMBAU_BUCKET_ID,
+                    "model_version": BERTIMBAU_VERSION,
+                    "message": (
+                        "Análise linguística auxiliar indisponível por falha técnica; "
+                        "isso não altera o resultado factual."
+                    ),
+                }
+            )
