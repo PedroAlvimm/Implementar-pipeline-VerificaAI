@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import trafilatura
 from bs4 import BeautifulSoup
 
 from app.core.errors import CollectionError
+from app.search.canonical import canonicalize_url
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,41 @@ def _parse_date(value: object) -> datetime | None:
         return None
 
 
+def source_identity_url(final_url: str, declared: str | None) -> str:
+    """Constrain HTML's canonical hint to the origin actually collected.
+
+    final_url is supplied by the safe transport, never by HTML. This does not
+    fetch the canonical target: it is only a same-origin identity hint.
+    """
+
+    def origin(url):
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("Invalid source identity URL")
+        return (
+            parsed.scheme,
+            parsed.hostname.casefold().rstrip("."),
+            parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80),
+        )
+
+    verified_origin = origin(final_url)
+    fallback = canonicalize_url(final_url)
+    if not declared or any(ord(char) < 32 for char in declared):
+        return fallback
+    try:
+        candidate = urljoin(final_url, declared.strip())
+        if origin(candidate) == verified_origin:
+            return canonicalize_url(candidate)
+    except ValueError:
+        pass
+    return fallback
+
+
 class ArticleExtractor:
     def extract(self, page: CollectedPage) -> ExtractedArticle:
         soup = BeautifulSoup(page.html, "html.parser")
@@ -98,7 +134,10 @@ class ArticleExtractor:
             jsonld.get("datePublished") or (date_node.get("content") if date_node else None)
         )
         canonical_node = soup.find("link", rel="canonical")
-        canonical_url = str(canonical_node.get("href")) if canonical_node else page.final_url
+        canonical_url = source_identity_url(
+            page.final_url,
+            str(canonical_node.get("href") or "") if canonical_node else None,
+        )
         language = soup.html.get("lang") if soup.html else None
         return ExtractedArticle(
             title=title,

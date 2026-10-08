@@ -53,6 +53,7 @@ def test_url_input_loader_collects_and_extracts_public_html() -> None:
         ),
         title="Notícia de teste",
         canonical_url="https://public.example/noticia",
+        final_url="https://public.example/noticia",
     )
 
 
@@ -127,3 +128,40 @@ def test_url_input_loader_maps_extraction_failure() -> None:
 
     assert captured.value.code == "EXTRACTION_FAILED"
     assert "conteúdo jornalístico" in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    "declared,expected",
+    [
+        ("https://saude.gov.br/fonte", "https://publisher.example/final/news"),
+        ("//saude.gov.br/fonte", "https://publisher.example/final/news"),
+        ("javascript:alert(1)", "https://publisher.example/final/news"),
+        ("https://user:password@publisher.example/story", "https://publisher.example/final/news"),
+        ("http://publisher.example/story", "https://publisher.example/final/news"),
+        ("https://publisher.example:444/story", "https://publisher.example/final/news"),
+        ("https://publisher.example:0/story", "https://publisher.example/final/news"),
+        ("https://publisher.example:broken/story", "https://publisher.example/final/news"),
+        ("../story?utm_source=feed", "https://publisher.example/story"),
+        ("https://PUBLISHER.example:443/story", "https://publisher.example/story"),
+    ],
+)
+def test_declared_canonical_identity_is_confined_to_verified_final_origin(declared, expected):
+    class Collector:
+        def collect(self, url):
+            return OperationOutcome(
+                status=OperationStatus.SUCCESS,
+                data=CollectedPage(
+                    requested_url=url,
+                    final_url="https://publisher.example/final/news",
+                    content_type="text/html",
+                    html=(
+                        f'<html><head><link rel="canonical" href="{declared}"></head>'
+                        "<body><article>O município publicou um documento oficial com dez itens."
+                        "</article></body></html>"
+                    ),
+                ),
+            )
+
+    loaded = UrlInputLoader(Collector(), ArticleExtractor())("https://redirect.example/start")
+    assert loaded.canonical_url == expected
+    assert loaded.final_url == "https://publisher.example/final/news"

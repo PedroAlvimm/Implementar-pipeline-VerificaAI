@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.claims.schemas import ClaimId, ShortText
 from app.core.enums import Verdict
 from app.fact_checking.quotation import map_quote_to_original
 
@@ -31,12 +32,12 @@ class JudgmentEvidence(BaseModel):
 class EvidenceDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim_id: str
-    evidence_id: str
+    claim_id: ClaimId
+    evidence_id: ClaimId
     label: Verdict
-    reason: str
-    quoted_excerpt: str
-    limitations: list[str]
+    reason: str = Field(max_length=2048)
+    quoted_excerpt: str = Field(max_length=4096)
+    limitations: list[ShortText] = Field(max_length=16)
 
     @field_validator("label")
     @classmethod

@@ -6,6 +6,7 @@ runs belong to their original worker and cannot be adopted or retried.
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from collections.abc import Callable
@@ -42,21 +43,34 @@ from app.fact_checking.judgment import (
 from app.fact_checking.quotation import normalize_evidence_text
 from app.ingestion.url_loader import LoadedUrl, UrlInputFailure, build_safe_url_loader
 from app.reports.builder import ReportBuilder
+from app.scraping.extraction import source_identity_url
 from app.search.canonical import canonicalize_url
 from app.search.contracts import SearchResult
 from app.search.deduplication import DocumentCandidate, group_document_independence
 
 _START_LOCK = Lock()
 _PRIORITIES = {"high": 3, "medium": 2, "low": 1}
+_LLM_OUTPUT_BYTES = 32 * 1024
+_QUERY_OUTPUT_BYTES = 4 * 1024
+_TRACE_BYTES = 64 * 1024
 
 
 class PipelineBudgetExceeded(RuntimeError):
     """A factual run exceeded a local resource limit."""
 
 
-def _validated(schema, value):
+def _check_json_size(value, maximum):
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > maximum:
+        raise JudgmentValidationError("Structured output exceeds the JSON byte limit")
+
+
+def _validated(schema, value, *, max_json_bytes=None):
     # Revalidate model instances too: providers may construct or copy unchecked models.
-    return schema.model_validate(value.model_dump() if isinstance(value, BaseModel) else value)
+    validated = schema.model_validate(value.model_dump() if isinstance(value, BaseModel) else value)
+    if max_json_bytes is not None:
+        _check_json_size(validated.model_dump(mode="json"), max_json_bytes)
+    return validated
 
 
 @dataclass
@@ -94,7 +108,7 @@ class SafeEvidenceDocumentLoader:
 
     def load(self, result: SearchResult) -> EvidenceDocument:
         loaded = _validated(LoadedUrl, self.url_loader(result.url))
-        url = canonicalize_url(loaded.canonical_url)
+        url = source_identity_url(loaded.final_url, loaded.canonical_url)
         return EvidenceDocument(
             id=sha256(url.encode()).hexdigest(),
             text=loaded.text,
@@ -202,7 +216,11 @@ class DjangoAnalysisPipeline:
             self._update(run.pk, trace=trace)
 
             budget.llm(text)
-            batch = _validated(ClaimValidationResult, self.claim_extractor.extract(text))
+            batch = _validated(
+                ClaimValidationResult,
+                self.claim_extractor.extract(text),
+                max_json_bytes=_LLM_OUTPUT_BYTES,
+            )
             checked = validate_claims(text, batch.accepted, limit=self.settings.max_claims)
             claims = [claim for claim in checked.accepted if claim.checkable]
             if len({claim.id for claim in claims}) != len(claims):
@@ -273,7 +291,9 @@ class DjangoAnalysisPipeline:
                     budget.llm(f"{claim.text}\n{evidence.text}")
                     decision = validate_decision(
                         _validated(
-                            EvidenceDecision, self.judge.judge(claim.id, claim.text, evidence)
+                            EvidenceDecision,
+                            self.judge.judge(claim.id, claim.text, evidence),
+                            max_json_bytes=_LLM_OUTPUT_BYTES,
                         ),
                         claim.id,
                         evidence,
@@ -368,7 +388,13 @@ class DjangoAnalysisPipeline:
 
     def _discover(self, run_id, claim, budget, trace, limitations):
         budget.llm(claim.text)
-        queries = _validated(QuerySet, self.query_generator.generate(claim))
+        queries = _validated(
+            QuerySet,
+            self.query_generator.generate(claim),
+            max_json_bytes=_QUERY_OUTPUT_BYTES,
+        )
+        if len(queries.queries) > self.settings.max_queries_per_claim:
+            raise JudgmentValidationError("Query count exceeds the configured limit")
         if queries.claim_id != claim.id or any(not query.strip() for query in queries.queries):
             raise JudgmentValidationError("Invalid query references or content")
         trace["queries"].append(queries.model_dump(mode="json"))
@@ -446,6 +472,8 @@ class DjangoAnalysisPipeline:
 
     @staticmethod
     def _update(run_id, **fields):
+        if "trace" in fields:
+            _check_json_size(fields["trace"], _TRACE_BYTES)
         updated = AnalysisRun.objects.filter(pk=run_id, state=RunState.RUNNING).update(
             **fields,
             updated_at=timezone.now(),

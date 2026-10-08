@@ -22,6 +22,7 @@ class LoadedUrl(BaseModel):
     text: str
     title: str | None
     canonical_url: str
+    final_url: str
 
 
 class UrlInputFailure(CollectionError):
@@ -64,6 +65,7 @@ class UrlInputLoader:
             text=article.clean_text,
             title=article.title,
             canonical_url=article.canonical_url,
+            final_url=outcome.data.final_url,
         )
 
 

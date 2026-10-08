@@ -435,7 +435,7 @@ def test_factual_persistence_normalizes_before_storing_literal_quote(tmp_path):
 def test_url_input_is_loaded_by_injected_safe_boundary_and_stored_on_disk(tmp_path):
     def load(url):
         assert url == "https://input.example/news"
-        return LoadedUrl(text=TEXT, title="Entrada", canonical_url=url)
+        return LoadedUrl(text=TEXT, title="Entrada", canonical_url=url, final_url=url)
 
     run = create_run("url", "https://input.example/news")
     completed = make_pipeline(tmp_path, url_loader=load).run(run.pk)
@@ -490,6 +490,178 @@ def test_default_document_loader_uses_safe_input_loader(tmp_path):
     run = pipeline.run(create_run().pk)
     assert run.state == RunState.COMPLETED
     assert Evidence.objects.get(run=run).excerpt == EXCERPT
+
+
+def test_html_canonical_cannot_promote_third_party_to_official_source(tmp_path):
+    from analyses.services.pipeline import SafeEvidenceDocumentLoader
+    from app.core.enums import OperationStatus
+    from app.core.outcomes import OperationOutcome
+    from app.ingestion.url_loader import UrlInputLoader
+    from app.scraping.extraction import ArticleExtractor, CollectedPage
+
+    class Collector:
+        def collect(self, url):
+            return OperationOutcome(
+                status=OperationStatus.SUCCESS,
+                data=CollectedPage(
+                    requested_url=url,
+                    final_url="https://thirdparty.example/article",
+                    content_type="text/html",
+                    html=(
+                        '<html><head><link rel="canonical" href="https://saude.gov.br/official">'
+                        f"</head><body><article>{EXCERPT}</article></body></html>"
+                    ),
+                ),
+            )
+
+    pipeline = make_pipeline(tmp_path)
+    pipeline.document_loader = SafeEvidenceDocumentLoader(
+        UrlInputLoader(Collector(), ArticleExtractor())
+    )
+    run = pipeline.run(create_run().pk)
+    assert run.state == RunState.COMPLETED
+    row = Evidence.objects.get(run=run)
+    assert row.canonical_url == "https://thirdparty.example/article"
+    assert row.domain == "thirdparty.example"
+    assert run.report["claims"][0]["confidence_level"] == "LOW"
+
+
+def test_document_loader_checks_provenance_even_for_an_alternate_input_loader():
+    from analyses.services.pipeline import SafeEvidenceDocumentLoader
+
+    loaded = LoadedUrl(
+        text=EXCERPT,
+        title="Fonte",
+        final_url="https://thirdparty.example/final",
+        canonical_url="https://saude.gov.br/forged",
+    )
+    result = Providers().search("query", 1)[0]
+    document = SafeEvidenceDocumentLoader(lambda url: loaded).load(result)
+    assert document.url == "https://thirdparty.example/final"
+    assert document.domain == "thirdparty.example"
+
+
+@pytest.mark.parametrize(
+    "queries,settings",
+    [
+        (["x" * 513, "valid query"], Settings()),
+        (["query one", "query two", "query three"], Settings(max_queries_per_claim=2)),
+        (["🚑" * 512] * 4, Settings()),
+    ],
+)
+def test_oversized_queries_fail_before_search_or_trace_write(tmp_path, queries, settings):
+    provider = Providers()
+    provider.generate = lambda claim: QuerySet.model_construct(claim_id=claim.id, queries=queries)
+    searched = []
+    provider.search = lambda query, limit: searched.append(query) or []
+    run = make_pipeline(tmp_path, provider, settings=settings).run(create_run().pk)
+    assert run.state == RunState.FAILED and run.error_code == "INVALID_LLM_OUTPUT"
+    assert searched == []
+    assert run.trace["queries"] == []
+    assert len(json.dumps(run.trace).encode()) < 1024
+    assert run.report == {}
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"text": "x" * 4097},
+        {"id": "claim_" + "x" * 128},
+        {"original_excerpt": "x" * 8193},
+        {"entities": ["x" * 257]},
+        {"entities": ["entity"] * 21},
+        {"temporal_scope": "x" * 513},
+    ],
+)
+def test_oversized_claim_fields_are_rejected_before_any_claim_write(tmp_path, changes):
+    provider = Providers()
+    extract = provider.extract
+
+    def oversized(text):
+        batch = extract(text)
+        batch.accepted[0] = batch.accepted[0].model_copy(update=changes)
+        return batch
+
+    provider.extract = oversized
+    run = make_pipeline(tmp_path, provider).run(create_run().pk)
+    assert run.state == RunState.FAILED and run.error_code == "INVALID_LLM_OUTPUT"
+    assert not Claim.objects.filter(run=run).exists()
+    assert len(json.dumps(run.trace).encode()) < 1024
+    assert run.limitations == [] and run.report == {}
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"reason": "x" * 2049},
+        {"quoted_excerpt": "x" * 4097},
+        {"limitations": ["x" * 513]},
+        {"limitations": ["reason"] * 17},
+    ],
+)
+def test_oversized_judgment_fields_fail_without_persisting_decision(tmp_path, changes):
+    provider = Providers()
+    judge = provider.judge
+    provider.judge = lambda *args: judge(*args).model_copy(update=changes)
+    run = make_pipeline(tmp_path, provider).run(create_run().pk)
+    assert run.state == RunState.FAILED and run.error_code == "INVALID_LLM_OUTPUT"
+    assert not Evidence.objects.filter(run=run).exists()
+    assert Claim.objects.get(run=run).verdict == ""
+    assert run.report == {} and run.limitations == []
+
+
+def test_rejection_text_and_aggregate_claim_payload_are_bounded(tmp_path):
+    from app.claims.schemas import RejectedClaim
+
+    provider = Providers()
+    extract = provider.extract
+
+    def oversized(text):
+        batch = extract(text)
+        batch.rejected = [RejectedClaim.model_construct(claim_id="claim_2", reason="x" * 513)]
+        return batch
+
+    provider.extract = oversized
+    run = make_pipeline(tmp_path, provider).run(create_run().pk)
+    assert run.state == RunState.FAILED and run.error_code == "INVALID_LLM_OUTPUT"
+    assert not Claim.objects.filter(run=run).exists()
+    assert run.limitations == []
+
+
+def test_schema_valid_claim_batch_exceeding_json_budget_is_rejected_as_a_whole(tmp_path):
+    provider = Providers()
+    extract = provider.extract
+
+    def oversized(text):
+        batch = extract(text)
+        claim = batch.accepted[0].model_copy(update={"text": "🚑" * 4096})
+        return batch.model_copy(
+            update={
+                "accepted": [
+                    claim.model_copy(update={"id": f"claim_{index}"}) for index in range(3)
+                ]
+            }
+        )
+
+    provider.extract = oversized
+    run = make_pipeline(tmp_path, provider).run(create_run().pk)
+    assert run.state == RunState.FAILED and run.error_code == "INVALID_LLM_OUTPUT"
+    assert not Claim.objects.filter(run=run).exists()
+    assert run.limitations == [] and run.report == {}
+
+
+def test_trace_budget_rejects_entire_update_without_replacing_previous_trace(tmp_path):
+    from analyses.services.pipeline import DjangoAnalysisPipeline
+    from app.fact_checking.judgment import JudgmentValidationError
+
+    run = create_run()
+    transition_run(run.pk, RunState.RUNNING)
+    run.trace = {"queries": []}
+    run.save(update_fields=["trace"])
+    with pytest.raises(JudgmentValidationError):
+        DjangoAnalysisPipeline._update(run.pk, trace={"large": "x" * 65536}, limitations=["new"])
+    run.refresh_from_db()
+    assert run.trace == {"queries": []} and run.limitations == []
 
 
 def test_artifact_batch_rejection_does_not_persist_valid_prefix(tmp_path):

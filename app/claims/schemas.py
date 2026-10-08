@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Provider outputs are bounded before they can become trace, rows or reports.
+ClaimId = Annotated[str, Field(min_length=1, max_length=128)]
+ShortText = Annotated[str, Field(min_length=1, max_length=512)]
+EntityText = Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class StrictModel(BaseModel):
@@ -25,33 +31,33 @@ class ClaimPriority(StrEnum):
 
 
 class Claim(StrictModel):
-    id: str = Field(pattern=r"^claim_[A-Za-z0-9_-]+$")
-    text: str = Field(min_length=1)
-    original_excerpt: str = Field(min_length=1)
+    id: ClaimId = Field(pattern=r"^claim_[A-Za-z0-9_-]+$")
+    text: str = Field(min_length=1, max_length=4096)
+    original_excerpt: str = Field(min_length=1, max_length=8192)
     claim_type: ClaimType
     checkable: bool
     priority: ClaimPriority
-    entities: list[str]
+    entities: list[EntityText] = Field(max_length=20)
     event_date: date | None = None
     valid_from: date | None = None
     valid_until: date | None = None
-    temporal_scope: str | None = None
+    temporal_scope: ShortText | None = None
 
 
 class ClaimBatch(StrictModel):
-    claims: list[Claim]
+    claims: list[Claim] = Field(max_length=32)
 
 
 class QuerySet(StrictModel):
-    claim_id: str
-    queries: list[str] = Field(min_length=2, max_length=4)
+    claim_id: ClaimId
+    queries: list[ShortText] = Field(min_length=2, max_length=4)
 
 
 class RejectedClaim(StrictModel):
-    claim_id: str
-    reason: str
+    claim_id: ClaimId
+    reason: ShortText
 
 
 class ClaimValidationResult(StrictModel):
-    accepted: list[Claim]
-    rejected: list[RejectedClaim]
+    accepted: list[Claim] = Field(max_length=32)
+    rejected: list[RejectedClaim] = Field(max_length=32)

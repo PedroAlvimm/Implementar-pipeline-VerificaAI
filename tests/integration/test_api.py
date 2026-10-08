@@ -214,6 +214,7 @@ def test_default_demo_stack_connects_safe_url_loader(
                 text="Em 2024, o Município Alfa comprou 10 ambulâncias.",
                 title="Entrada coletada",
                 canonical_url=url,
+                final_url=url,
             )
         ),
     )
